@@ -46,6 +46,8 @@ export interface TextElementProps extends BaseElementProps {
   textTransform?: "none" | "uppercase" | "capitalize" | "lowercase";
   shadowColor?: string;
   shadowBlur?: number;
+  shadowOffsetX?: number;
+  shadowOffsetY?: number;
 }
 
 export class TextElement extends CanvasElement {
@@ -60,6 +62,8 @@ export class TextElement extends CanvasElement {
   public textTransform: "none" | "uppercase" | "capitalize" | "lowercase";
   public shadowColor?: string;
   public shadowBlur?: number;
+  public shadowOffsetX?: number;
+  public shadowOffsetY?: number;
 
   constructor(props: Omit<TextElementProps, "type"> & { type?: "text" }) {
     super({ ...props, type: "text" });
@@ -74,6 +78,8 @@ export class TextElement extends CanvasElement {
     this.textTransform = props.textTransform ?? "none";
     this.shadowColor = props.shadowColor;
     this.shadowBlur = props.shadowBlur;
+    this.shadowOffsetX = props.shadowOffsetX ?? 0;
+    this.shadowOffsetY = props.shadowOffsetY ?? 0;
   }
 
   public resolveText(student: StudentRecord): string {
@@ -236,6 +242,8 @@ export class CertificateTemplate {
   public height: number;
   public backgroundUrl?: string;
   public backgroundColor: string;
+  public showDecorativeBorders: boolean;
+  public backgroundDim: number;
   private elements: CanvasElement[];
 
   constructor(
@@ -249,6 +257,8 @@ export class CertificateTemplate {
     this.width = width;
     this.height = height;
     this.backgroundColor = "#0F172A";
+    this.showDecorativeBorders = true;
+    this.backgroundDim = 0;
     this.elements = [];
   }
 
@@ -283,6 +293,8 @@ export class CertificateTemplate {
       height: this.height,
       backgroundUrl: this.backgroundUrl,
       backgroundColor: this.backgroundColor,
+      showDecorativeBorders: this.showDecorativeBorders,
+      backgroundDim: this.backgroundDim,
       elements: this.elements.map((e) => e.toJSON()),
     };
   }
@@ -296,6 +308,8 @@ export class CertificateTemplate {
     );
     tpl.backgroundUrl = json.backgroundUrl;
     tpl.backgroundColor = json.backgroundColor ?? "#0F172A";
+    tpl.showDecorativeBorders = json.showDecorativeBorders ?? true;
+    tpl.backgroundDim = json.backgroundDim ?? 0;
 
     const elements: CanvasElement[] = (json.elements || []).map((elJson: any) => {
       if (elJson.type === "text") {

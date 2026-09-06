@@ -26,6 +26,45 @@ export class BulkGeneratorEngine {
   }
 
   /**
+   * Parses a user row range string (e.g. "20-30, 40-70, 85") into 0-indexed row numbers.
+   * Row numbers are 1-indexed from the user's perspective.
+   */
+  public static parseRowRange(rangeStr: string, totalRows: number): number[] {
+    if (!rangeStr || !rangeStr.trim()) {
+      return Array.from({ length: totalRows }, (_, i) => i);
+    }
+
+    const parts = rangeStr.split(",");
+    const indices = new Set<number>();
+
+    for (const part of parts) {
+      const trimmed = part.trim();
+      if (!trimmed) continue;
+
+      if (trimmed.includes("-")) {
+        const [startStr, endStr] = trimmed.split("-");
+        const start = parseInt(startStr.trim(), 10);
+        const end = parseInt(endStr.trim(), 10);
+
+        if (!isNaN(start) && !isNaN(end)) {
+          const lower = Math.max(1, Math.min(start, end));
+          const upper = Math.min(totalRows, Math.max(start, end));
+          for (let i = lower; i <= upper; i++) {
+            indices.add(i - 1);
+          }
+        }
+      } else {
+        const num = parseInt(trimmed, 10);
+        if (!isNaN(num) && num >= 1 && num <= totalRows) {
+          indices.add(num - 1);
+        }
+      }
+    }
+
+    return Array.from(indices).sort((a, b) => a - b);
+  }
+
+  /**
    * Formats a clean, filesystem-safe filename based on pattern and student record.
    */
   public static formatFilename(pattern: string, student: StudentRecord): string {
@@ -52,23 +91,33 @@ export class BulkGeneratorEngine {
     // 1. Draw Background
     if (bgImageElement && bgImageElement.complete && bgImageElement.naturalWidth > 0) {
       ctx.drawImage(bgImageElement, 0, 0, template.width, template.height);
+      if (template.backgroundDim && template.backgroundDim > 0) {
+        ctx.fillStyle = `rgba(0, 0, 0, ${template.backgroundDim})`;
+        ctx.fillRect(0, 0, template.width, template.height);
+      }
     } else {
-      // Sophisticated default university dark gradient background
-      const gradient = ctx.createLinearGradient(0, 0, template.width, template.height);
-      gradient.addColorStop(0, "#090D16");
-      gradient.addColorStop(0.5, "#0F172A");
-      gradient.addColorStop(1, "#1E1B4B");
-      ctx.fillStyle = gradient;
-      ctx.fillRect(0, 0, template.width, template.height);
+      if (template.showDecorativeBorders !== false) {
+        // Sophisticated default university dark gradient background
+        const gradient = ctx.createLinearGradient(0, 0, template.width, template.height);
+        gradient.addColorStop(0, "#090D16");
+        gradient.addColorStop(0.5, "#0F172A");
+        gradient.addColorStop(1, "#1E1B4B");
+        ctx.fillStyle = gradient;
+        ctx.fillRect(0, 0, template.width, template.height);
 
-      // Add elegant certificate borders
-      ctx.strokeStyle = "rgba(99, 102, 241, 0.4)";
-      ctx.lineWidth = 8;
-      ctx.strokeRect(30, 30, template.width - 60, template.height - 60);
+        // Add elegant certificate borders
+        ctx.strokeStyle = "rgba(99, 102, 241, 0.4)";
+        ctx.lineWidth = 8;
+        ctx.strokeRect(30, 30, template.width - 60, template.height - 60);
 
-      ctx.strokeStyle = "rgba(217, 119, 6, 0.35)"; // Gold inner border
-      ctx.lineWidth = 2;
-      ctx.strokeRect(45, 45, template.width - 90, template.height - 90);
+        ctx.strokeStyle = "rgba(217, 119, 6, 0.35)"; // Gold inner border
+        ctx.lineWidth = 2;
+        ctx.strokeRect(45, 45, template.width - 90, template.height - 90);
+      } else {
+        // Clean blank slate mode for Photoshop/Illustrator template designs
+        ctx.fillStyle = template.backgroundColor || "#0F172A";
+        ctx.fillRect(0, 0, template.width, template.height);
+      }
     }
 
     // 2. Draw Elements in order
@@ -86,7 +135,7 @@ export class BulkGeneratorEngine {
         const textEl = el as TextElement;
         const textToDraw = textEl.resolveText(student);
 
-        ctx.font = `${textEl.fontWeight} ${textEl.fontSize}px ${textEl.fontFamily}, sans-serif`;
+        ctx.font = `${textEl.fontWeight} ${textEl.fontSize}px "${textEl.fontFamily}", sans-serif`;
         ctx.fillStyle = textEl.color;
         ctx.textAlign = textEl.align;
         ctx.textBaseline = "middle";
@@ -94,6 +143,12 @@ export class BulkGeneratorEngine {
         if (textEl.shadowColor && textEl.shadowBlur) {
           ctx.shadowColor = textEl.shadowColor;
           ctx.shadowBlur = textEl.shadowBlur;
+          ctx.shadowOffsetX = textEl.shadowOffsetX ?? 0;
+          ctx.shadowOffsetY = textEl.shadowOffsetY ?? 0;
+        }
+
+        if (textEl.letterSpacing && "letterSpacing" in ctx) {
+          (ctx as any).letterSpacing = `${textEl.letterSpacing}px`;
         }
 
         ctx.fillText(textToDraw, textEl.x, textEl.y);

@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useMemo } from "react";
 import * as XLSX from "xlsx";
 import Papa from "papaparse";
 import { THEME } from "@/styles/theme";
@@ -34,6 +34,9 @@ import {
   SlidersHorizontal,
   Edit2,
   FileText,
+  GraduationCap,
+  Trophy,
+  UserCheck,
 } from "lucide-react";
 
 export interface DataRefineryViewProps {
@@ -83,16 +86,38 @@ export const DataRefineryView: React.FC<DataRefineryViewProps> = ({
   // Edit Single Row Modal State
   const [editingRecord, setEditingRecord] = useState<StudentRecord | null>(null);
 
-  // Mentor Allocation Modal State
-  const [isMentorModalOpen, setIsMentorModalOpen] = useState(false);
-  const [mentorInput, setMentorInput] = useState(
-    "Prof. Alan Turing\nDr. Ada Lovelace\nProf. Grace Hopper\nDr. Andrew Ng"
+  // Contest Advisor / Supervisor Assignment State
+  const [isAdvisorModalOpen, setIsAdvisorModalOpen] = useState(false);
+  const [advisorListInput, setAdvisorListInput] = useState(
+    "Prof. Alan Turing\nDr. Ada Lovelace\nProf. Grace Hopper\nDr. Andrew Ng\nProf. Claude Shannon"
   );
-  const [mentorAllocations, setMentorAllocations] = useState<any[]>([]);
+  const [advisorColumnName, setAdvisorColumnName] = useState("Course Teacher / Advisor");
+  const [advisorStrategy, setAdvisorStrategy] = useState<"team" | "balanced">("team");
+  const [selectedTeamColumn, setSelectedTeamColumn] = useState<string>("Team Name");
 
   const records = roster.getRecords();
   const tShirtMatrix = DataRefineryEngine.getTShirtMatrix(records);
   const mealMatrix = DataRefineryEngine.getMealMatrix(records);
+
+  // Computed preview statistics for Contest Advisor assignment modal
+  const supervisorList = advisorListInput
+    .split("\n")
+    .map((s) => s.trim())
+    .filter((s) => s.length > 0);
+
+  const activeTeamCol =
+    dynamicColumns.find((c) => c.toLowerCase() === selectedTeamColumn.toLowerCase()) ||
+    dynamicColumns.find((c) => c.toLowerCase().includes("team")) ||
+    selectedTeamColumn;
+
+  const detectedTeamsCount = useMemo(() => {
+    const set = new Set<string>();
+    records.forEach((r) => {
+      const val = String(r[activeTeamCol] || r["Team Name"] || (r as any).team || "").trim();
+      if (val) set.add(val);
+    });
+    return set.size;
+  }, [records, activeTeamCol]);
 
   // =========================================================================
   // DYNAMIC SPREADSHEET UPLOAD WITH COLUMN DETECTION
@@ -392,13 +417,36 @@ Other: ${tShirtMatrix.Other}`;
     setTimeout(() => setCopiedMatrix(false), 2000);
   };
 
-  const runMentorAllocation = () => {
-    const list = mentorInput
+  const handleApplySupervisors = () => {
+    const list = advisorListInput
       .split("\n")
       .map((s) => s.trim())
       .filter((s) => s.length > 0);
-    const result = DataRefineryEngine.allocateToMentors(records, list);
-    setMentorAllocations(result);
+
+    if (list.length === 0) return;
+
+    const col = advisorColumnName.trim() || "Course Teacher / Advisor";
+    const teamCol = dynamicColumns.find(
+      (c) => c.toLowerCase() === selectedTeamColumn.toLowerCase()
+    ) || selectedTeamColumn;
+
+    const updated = DataRefineryEngine.assignSupervisorsRowWise(
+      records,
+      list,
+      col,
+      advisorStrategy,
+      teamCol
+    );
+
+    // Make sure the new advisor column is visible in dynamicColumns & roster
+    if (!dynamicColumns.includes(col)) {
+      const nextCols = [...dynamicColumns, col];
+      setDynamicColumns(nextCols);
+      roster.setColumnHeaders(nextCols);
+    }
+
+    onRosterUpdate(updated);
+    setIsAdvisorModalOpen(false);
   };
 
   // =========================================================================
@@ -453,6 +501,30 @@ Other: ${tShirtMatrix.Other}`;
           return (
             <Badge variant={status === "Paid" ? "success" : "warning"}>
               {status}
+            </Badge>
+          );
+        }
+        // Custom badge for Course Teacher / Advisor / Mentor / Supervisor column
+        if (
+          colKey === "Course Teacher / Advisor" ||
+          colKey.toLowerCase().includes("advisor") ||
+          colKey.toLowerCase().includes("supervisor") ||
+          colKey.toLowerCase().includes("teacher") ||
+          colKey.toLowerCase().includes("mentor")
+        ) {
+          return (
+            <div className="flex items-center gap-1.5 font-medium text-emerald-700 dark:text-emerald-300">
+              <GraduationCap className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400 shrink-0" />
+              <span className="font-semibold">{String(val || r.advisor || r.supervisor || "—")}</span>
+            </div>
+          );
+        }
+        // Custom badge for Team Name column
+        if (colKey === "Team Name" || colKey.toLowerCase().includes("team")) {
+          return (
+            <Badge variant="neutral">
+              <Trophy className="w-3 h-3 text-amber-500 mr-1" />
+              <span className="font-semibold text-slate-800 dark:text-slate-200">{String(val || "—")}</span>
             </Badge>
           );
         }
@@ -787,14 +859,12 @@ Other: ${tShirtMatrix.Other}`;
               </button>
 
               <button
-                onClick={() => {
-                  runMentorAllocation();
-                  setIsMentorModalOpen(true);
-                }}
-                className="px-2.5 py-1 rounded-lg bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900 text-blue-700 dark:text-blue-300 font-semibold cursor-pointer shadow-2xs flex items-center gap-1 ml-auto"
+                onClick={() => setIsAdvisorModalOpen(true)}
+                className="px-2.5 py-1 rounded-lg bg-emerald-50 dark:bg-emerald-950/60 border border-emerald-200 dark:border-emerald-800 hover:bg-emerald-100 dark:hover:bg-emerald-900 text-emerald-700 dark:text-emerald-300 font-semibold cursor-pointer shadow-2xs flex items-center gap-1.5 ml-auto"
+                title="Assign Course Teacher, Advisor, or Contest Mentor row-wise"
               >
-                <BookOpen className="w-3.5 h-3.5" />
-                <span>Allocate Mentors</span>
+                <GraduationCap className="w-3.5 h-3.5 text-emerald-600 dark:text-emerald-400" />
+                <span>Assign Advisor / Supervisor</span>
               </button>
             </div>
           </div>
@@ -1003,70 +1073,161 @@ Other: ${tShirtMatrix.Other}`;
       )}
 
       {/* ========================================================================= */}
-      {/* MENTOR ALLOCATION MODAL                                                   */}
+      {/* CONTEST ADVISOR / SUPERVISOR ROW-WISE ASSIGNMENT MODAL                     */}
       {/* ========================================================================= */}
       <Modal
-        isOpen={isMentorModalOpen}
-        onClose={() => setIsMentorModalOpen(false)}
-        title="Student-to-Teacher / Mentor Allocator"
-        subtitle="Evenly distributes examinees or participants across faculty advisors"
+        isOpen={isAdvisorModalOpen}
+        onClose={() => setIsAdvisorModalOpen(false)}
+        title="Assign Course Teacher, Advisor or Contest Supervisor"
+        subtitle="Adds an official column row-wise to your table and exported sheets with team-consistent or balanced distribution."
         maxWidth="2xl"
         footer={
-          <div className="flex items-center justify-between w-full">
-            <span className="text-xs text-slate-400">
-              {records.length} students split across {mentorAllocations.length} mentors
+          <div className="flex flex-wrap items-center justify-between gap-3 w-full">
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              {records.length} records • {advisorStrategy === "team" ? `${detectedTeamsCount} teams` : "Individual"} • {supervisorList.length} supervisors
             </span>
-            <Button variant="primary" onClick={() => setIsMentorModalOpen(false)}>
-              Done
-            </Button>
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" onClick={() => setIsAdvisorModalOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                variant="primary"
+                leftIcon={<CheckCircle2 className="w-4 h-4" />}
+                onClick={handleApplySupervisors}
+              >
+                Apply to Table Row-Wise
+              </Button>
+            </div>
           </div>
         }
       >
         <div className="space-y-4 text-xs">
+          {/* Assignment Strategy Selector */}
           <div>
-            <label className="block text-slate-700 dark:text-slate-300 font-medium mb-1.5">
-              Enter Mentors / Faculty Advisors (one per line):
+            <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-2">
+              Assignment Strategy:
             </label>
-            <textarea
-              rows={3}
-              value={mentorInput}
-              onChange={(e) => setMentorInput(e.target.value)}
-              className={THEME.surface.input}
-            />
-            <Button
-              variant="secondary"
-              size="sm"
-              className="mt-2"
-              onClick={runMentorAllocation}
-            >
-              Re-Calculate Allocations
-            </Button>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                onClick={() => setAdvisorStrategy("team")}
+                className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                  advisorStrategy === "team"
+                    ? "bg-blue-50 dark:bg-blue-950/40 border-blue-500 text-blue-900 dark:text-blue-100 ring-2 ring-blue-500/20"
+                    : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                }`}
+              >
+                <div className="flex items-center gap-2 font-bold text-xs mb-1">
+                  <Trophy className="w-4 h-4 text-amber-500 shrink-0" />
+                  <span>Contest Team Mode</span>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  All teammates in the same team get the identical supervisor assigned. Ideal for hackathons and coding contests.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setAdvisorStrategy("balanced")}
+                className={`p-3 rounded-xl border text-left cursor-pointer transition-all ${
+                  advisorStrategy === "balanced"
+                    ? "bg-blue-50 dark:bg-blue-950/40 border-blue-500 text-blue-900 dark:text-blue-100 ring-2 ring-blue-500/20"
+                    : "bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800/60"
+                }`}
+              >
+                <div className="flex items-center gap-2 font-bold text-xs mb-1">
+                  <UserCheck className="w-4 h-4 text-emerald-500 shrink-0" />
+                  <span>Balanced Distribution</span>
+                </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Evenly distributes faculty advisors across individual students via round-robin. Ideal for course project batches.
+                </p>
+              </button>
+            </div>
           </div>
 
-          <div className="space-y-3 pt-2">
-            <h4 className="text-xs font-bold text-slate-700 dark:text-slate-200 uppercase tracking-wider">
-              Allocated Groups:
-            </h4>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-64 overflow-y-auto">
-              {mentorAllocations.map((alloc, idx) => (
-                <div
-                  key={idx}
-                  className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 space-y-1.5"
+          {/* Team Column Selection if Contest Team Mode is active */}
+          {advisorStrategy === "team" && (
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="text-slate-700 dark:text-slate-300 font-semibold">
+                  Team Identifier Column in Spreadsheet:
+                </label>
+                <span className="text-[11px] text-blue-600 dark:text-blue-400 font-semibold">
+                  {detectedTeamsCount} Teams Detected
+                </span>
+              </div>
+              <select
+                value={selectedTeamColumn}
+                onChange={(e) => setSelectedTeamColumn(e.target.value)}
+                className={`${THEME.surface.select} py-1.5 font-medium`}
+              >
+                {dynamicColumns.map((col) => (
+                  <option key={col} value={col}>
+                    {col} {col.toLowerCase().includes("team") ? "★ (Recommended)" : ""}
+                  </option>
+                ))}
+              </select>
+              {detectedTeamsCount === 0 && (
+                <p className="text-[11px] text-amber-600 dark:text-amber-400">
+                  Notice: No team names were found in column "{selectedTeamColumn}". Select another column or switch to Balanced Mode.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Target Column Name Configuration */}
+          <div className="space-y-1.5">
+            <label className="block text-slate-700 dark:text-slate-300 font-semibold">
+              Column Header Name in Table & Exported Sheets:
+            </label>
+            <input
+              type="text"
+              value={advisorColumnName}
+              onChange={(e) => setAdvisorColumnName(e.target.value)}
+              placeholder="e.g. Course Teacher / Advisor"
+              className={THEME.surface.input}
+            />
+            <div className="flex items-center gap-1.5 pt-1 flex-wrap">
+              <span className="text-[11px] text-slate-400 font-medium">Quick suggestions:</span>
+              {["Course Teacher / Advisor", "Course Teacher", "Advisor", "Supervisor", "Contest Mentor"].map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => setAdvisorColumnName(preset)}
+                  className={`px-2 py-0.5 rounded text-[10px] font-medium border cursor-pointer transition-colors ${
+                    advisorColumnName === preset
+                      ? "bg-blue-100 text-blue-700 border-blue-300 dark:bg-blue-900/60 dark:text-blue-200 dark:border-blue-700"
+                      : "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 hover:bg-slate-200 dark:hover:bg-slate-700"
+                  }`}
                 >
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-900 dark:text-white text-xs">{alloc.mentorName}</span>
-                    <Badge variant="primary">{alloc.students.length} Students</Badge>
-                  </div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400 max-h-24 overflow-y-auto space-y-0.5">
-                    {alloc.students.map((s: any) => (
-                      <div key={s.id} className="flex justify-between">
-                        <span>{s.name}</span>
-                        <span className="font-mono text-slate-400 dark:text-slate-500">{s.id}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+                  {preset}
+                </button>
               ))}
+            </div>
+          </div>
+
+          {/* Supervisors / Faculty Advisors List */}
+          <div className="space-y-1.5">
+            <label className="block text-slate-700 dark:text-slate-300 font-semibold">
+              Supervisors / Faculty Advisors List (One per line):
+            </label>
+            <textarea
+              rows={4}
+              value={advisorListInput}
+              onChange={(e) => setAdvisorListInput(e.target.value)}
+              placeholder="Prof. Alan Turing&#10;Dr. Ada Lovelace&#10;Prof. Grace Hopper"
+              className={`${THEME.surface.input} font-mono`}
+            />
+            <div className="flex items-center justify-between text-[11px] text-slate-400">
+              <span>{supervisorList.length} supervisor(s) ready</span>
+              {supervisorList.length > 0 && records.length > 0 && (
+                <span className="text-emerald-600 dark:text-emerald-400 font-medium">
+                  {advisorStrategy === "team" && detectedTeamsCount > 0
+                    ? `~ ${(detectedTeamsCount / supervisorList.length).toFixed(1)} teams / supervisor`
+                    : `~ ${Math.ceil(records.length / supervisorList.length)} students / supervisor`}
+                </span>
+              )}
             </div>
           </div>
         </div>
