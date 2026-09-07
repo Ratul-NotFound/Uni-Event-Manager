@@ -67,4 +67,82 @@ describe("SeatingAllocatorEngine", () => {
     expect(allocated[0].seats[0].student?.id).toBe("S1");
     expect(allocated[0].seats[1].student?.id).toBe("S2");
   });
+
+  it("should cluster team members together in team-clustered allocation", () => {
+    const teamStudents: StudentRecord[] = [
+      { id: "T1", name: "Alice", department: "CSE", teamName: "Alpha", email: "t1@u.edu" },
+      { id: "T2", name: "Bob", department: "EEE", teamName: "Beta", email: "t2@u.edu" },
+      { id: "T3", name: "Charlie", department: "BBA", teamName: "Alpha", email: "t3@u.edu" },
+      { id: "T4", name: "Dave", department: "CSE", teamName: "Beta", email: "t4@u.edu" },
+    ];
+
+    const room = new RoomGrid({
+      id: "hall-team",
+      name: "Hall Team",
+      rows: 2,
+      columns: 2,
+      studentsPerDesk: 1,
+    });
+
+    const allocated = SeatingAllocatorEngine.allocateTeamClustered(
+      teamStudents,
+      [room]
+    );
+
+    const s0 = allocated[0].seats[0].student;
+    const s1 = allocated[0].seats[1].student;
+    // Teammates of Alpha should sit together at indices 0 and 1
+    expect(s0?.teamName).toBe("Alpha");
+    expect(s1?.teamName).toBe("Alpha");
+  });
+
+  it("should skip broken/reserved seats during allocation", () => {
+    const room = new RoomGrid({
+      id: "hall-res",
+      name: "Hall Reserved",
+      rows: 2,
+      columns: 2,
+      studentsPerDesk: 1,
+      reservedSeatIds: ["hall-res-0-0-0"], // Row 0, Col 0 is broken
+    });
+
+    expect(room.getTotalCapacity()).toBe(3);
+
+    const allocated = SeatingAllocatorEngine.allocateSequential(
+      sampleStudents,
+      [room]
+    );
+
+    // First seat is reserved, so S1 must be seated at seat 1
+    expect(allocated[0].seats[0].isReserved).toBe(true);
+    expect(allocated[0].seats[0].student).toBeUndefined();
+    expect(allocated[0].seats[1].student?.id).toBe("S1");
+  });
+
+  it("should generate valid printable invigilator attendance sheet HTML", () => {
+    const room = new RoomGrid({
+      id: "hall-att",
+      name: "Auditorium A",
+      rows: 2,
+      columns: 2,
+      studentsPerDesk: 1,
+    });
+
+    const allocated = SeatingAllocatorEngine.allocateSequential(
+      sampleStudents.slice(0, 2),
+      [room]
+    );
+
+    const html = SeatingAllocatorEngine.generateAttendanceSheetHtml(
+      allocated[0],
+      "Annual Hackathon 2026",
+      "Dr. Alan Turing"
+    );
+
+    expect(html).toContain("Attendance Roster - Auditorium A");
+    expect(html).toContain("Annual Hackathon 2026");
+    expect(html).toContain("Dr. Alan Turing");
+    expect(html).toContain("Candidate Sig");
+    expect(html).toContain("Student 1");
+  });
 });

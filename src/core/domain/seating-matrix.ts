@@ -12,6 +12,8 @@ export interface AssignedSeat {
   position: SeatPosition;
   student?: StudentRecord;
   isAisle?: boolean;
+  isReserved?: boolean;
+  reservedReason?: string;
 }
 
 export interface RoomGridProps {
@@ -20,7 +22,8 @@ export interface RoomGridProps {
   rows: number;
   columns: number;
   studentsPerDesk: number;
-  aisles?: number[]; // Column indices marked as walking aisles
+  aisles?: number[] | Set<number>; // Column indices marked as walking aisles
+  reservedSeatIds?: string[] | Set<string>; // IDs of broken or VIP reserved seats
 }
 
 export interface AllocatedRoom {

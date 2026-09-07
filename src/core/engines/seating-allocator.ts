@@ -12,6 +12,7 @@ export class RoomGrid {
   public columns: number;
   public studentsPerDesk: number;
   public aisles: Set<number>;
+  public reservedSeatIds: Set<string>;
 
   constructor(props: RoomGridProps) {
     this.id = props.id;
@@ -20,11 +21,13 @@ export class RoomGrid {
     this.columns = props.columns;
     this.studentsPerDesk = props.studentsPerDesk;
     this.aisles = new Set(props.aisles || []);
+    this.reservedSeatIds = new Set(props.reservedSeatIds || []);
   }
 
   public getTotalCapacity(): number {
     const activeDesks = this.rows * (this.columns - this.aisles.size);
-    return Math.max(0, activeDesks * this.studentsPerDesk);
+    const rawTotal = Math.max(0, activeDesks * this.studentsPerDesk);
+    return Math.max(0, rawTotal - this.reservedSeatIds.size);
   }
 
   public generateEmptySeats(): AssignedSeat[] {
@@ -50,8 +53,10 @@ export class RoomGrid {
           for (let s = 0; s < this.studentsPerDesk; s++) {
             const seatSuffix = this.studentsPerDesk > 1 ? `-${s + 1}` : "";
             const label = `${rowLabel}${c + 1}${seatSuffix}`;
+            const seatId = `${this.id}-${r}-${c}-${s}`;
+            const isReserved = this.reservedSeatIds.has(seatId);
             seats.push({
-              id: `${this.id}-${r}-${c}-${s}`,
+              id: seatId,
               position: {
                 rowIndex: r,
                 colIndex: c,
@@ -59,6 +64,8 @@ export class RoomGrid {
                 label,
               },
               isAisle: false,
+              isReserved,
+              reservedReason: isReserved ? "Reserved / Broken Desk" : undefined,
             });
           }
         }
@@ -84,7 +91,7 @@ export class SeatingAllocatorEngine {
       let assignedCount = 0;
 
       for (const seat of seats) {
-        if (!seat.isAisle && studentIndex < students.length) {
+        if (!seat.isAisle && !seat.isReserved && studentIndex < students.length) {
           seat.student = {
             ...students[studentIndex],
             assignedRoom: room.name,
@@ -106,6 +113,29 @@ export class SeatingAllocatorEngine {
     }
 
     return result;
+  }
+
+  /**
+   * Team-Clustered Allocation:
+   * Groups students by team name so teammates sit together at the same bench / adjacent desks.
+   */
+  public static allocateTeamClustered(
+    students: StudentRecord[],
+    rooms: RoomGrid[]
+  ): AllocatedRoom[] {
+    const teamBuckets: Record<string, StudentRecord[]> = {};
+    for (const s of students) {
+      const team = s.teamName || (s as any).team || "Individual";
+      if (!teamBuckets[team]) teamBuckets[team] = [];
+      teamBuckets[team].push(s);
+    }
+
+    const clusteredStream: StudentRecord[] = [];
+    for (const team in teamBuckets) {
+      clusteredStream.push(...teamBuckets[team]);
+    }
+
+    return this.allocateSequential(clusteredStream, rooms);
   }
 
   /**
@@ -272,6 +302,100 @@ export class SeatingAllocatorEngine {
     `
       )
       .join("")}
+  </div>
+</body>
+</html>
+    `;
+  }
+
+  /**
+   * Generates clean, high-contrast printable HTML for Official Invigilator Room Attendance & Signature Sheets.
+   */
+  public static generateAttendanceSheetHtml(
+    room: AllocatedRoom,
+    eventName: string = "University Examination & Contest",
+    supervisorName?: string
+  ): string {
+    const occupiedSeats = room.seats.filter((s) => !s.isAisle && s.student);
+
+    return `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Attendance Roster - ${room.roomName}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 24px; color: #111; }
+    .header { border-bottom: 2px solid #1e293b; padding-bottom: 12px; margin-bottom: 16px; display: flex; justify-content: space-between; align-items: flex-end; }
+    .title { font-size: 20px; font-weight: 800; text-transform: uppercase; color: #0f172a; margin: 0; }
+    .subtitle { font-size: 13px; color: #475569; margin-top: 4px; }
+    .meta-box { text-align: right; font-size: 12px; color: #334155; }
+    .badge { display: inline-block; background: #e0e7ff; color: #3730a3; padding: 3px 8px; border-radius: 4px; font-weight: 700; font-size: 14px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 14px; font-size: 11px; }
+    th, td { border: 1px solid #94a3b8; padding: 6px 8px; text-align: left; }
+    th { background: #f1f5f9; font-weight: 700; text-transform: uppercase; font-size: 10px; }
+    .seat-badge { font-weight: 800; font-family: monospace; color: #1e3a8a; font-size: 12px; }
+    .check-box { width: 16px; height: 16px; border: 1px solid #475569; display: inline-block; }
+    .sig-line { border-bottom: 1px dotted #64748b; width: 100px; height: 14px; display: inline-block; }
+    .footer { margin-top: 28px; display: flex; justify-content: space-between; font-size: 12px; }
+    @media print { body { padding: 0; } button { display: none; } }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <div class="title">${eventName}</div>
+      <div class="subtitle">Official Invigilator / Room Supervisor Attendance Roster</div>
+    </div>
+    <div class="meta-box">
+      <div>ROOM: <span class="badge">${room.roomName}</span></div>
+      <div style="margin-top: 4px;">Total Examinees: <b>${room.totalAssigned}</b> / ${room.totalCapacity}</div>
+      ${supervisorName ? `<div style="margin-top: 2px;">Invigilator: <b>${supervisorName}</b></div>` : ""}
+    </div>
+  </div>
+
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 8%;">Seat</th>
+        <th style="width: 14%;">Student ID</th>
+        <th style="width: 24%;">Student Name</th>
+        <th style="width: 14%;">Department</th>
+        <th style="width: 14%;">Team</th>
+        <th style="width: 8%; text-align: center;">Present</th>
+        <th style="width: 8%; text-align: center;">Absent</th>
+        <th style="width: 10%;">Candidate Sig</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${occupiedSeats
+        .map(
+          (s) => `
+        <tr>
+          <td class="seat-badge">${s.position.label}</td>
+          <td><b>${s.student?.id || "-"}</b></td>
+          <td>${s.student?.name || "-"}</td>
+          <td>${s.student?.department || "-"}</td>
+          <td>${s.student?.teamName || "-"}</td>
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td style="text-align: center;"><div class="check-box"></div></td>
+          <td><div class="sig-line"></div></td>
+        </tr>
+      `
+        )
+        .join("")}
+    </tbody>
+  </table>
+
+  <div class="footer">
+    <div>
+      <p>Invigilator Name: __________________________</p>
+      <p>Signature: ________________________________</p>
+    </div>
+    <div style="text-align: right;">
+      <p>Present Count: ______ / ${room.totalAssigned}</p>
+      <p>Absent Count: _______</p>
+    </div>
   </div>
 </body>
 </html>

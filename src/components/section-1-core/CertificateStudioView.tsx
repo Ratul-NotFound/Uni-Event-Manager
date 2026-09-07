@@ -40,6 +40,7 @@ import {
   Palette,
   Check,
   UploadCloud,
+  ChevronLeft,
   ChevronRight,
   Database,
   Printer,
@@ -49,6 +50,8 @@ import {
   Calendar,
   GraduationCap,
   Hash,
+  Eye,
+  CheckCircle2,
 } from "lucide-react";
 
 export interface CertificateStudioViewProps {
@@ -485,17 +488,18 @@ export const CertificateStudioView: React.FC<CertificateStudioViewProps> = ({
   students,
 }) => {
   // =========================================================================
-  // GUIDED 3-STEP PIPELINE NAVIGATION STATE
+  // WORKFLOW PANEL ACTIVE TAB (1: Data & Scope | 2: Artwork | 3: Fields | 4: Export)
   // =========================================================================
-  const [currentStep, setCurrentStep] = useState<1 | 2 | 3>(2);
+  const [activeTab, setActiveTab] = useState<"data" | "artwork" | "fields" | "export">("fields");
 
-  // Data Source Mode in Step 1: "sheet" (bulk dataset) vs "individual" (one-off custom certificate)
-  const [dataSourceMode, setDataSourceMode] = useState<"sheet" | "individual">("sheet");
+  // Data Mode: "sheet" vs "individual"
+  const [dataMode, setDataMode] = useState<"sheet" | "individual">("sheet");
 
-  // Step 1: One-Off Custom Individual Entry Form
+  // Step 1: One-Off Custom Individual Entry
   const [customStudent, setCustomStudent] = useState<StudentRecord>({
     id: "VIP-2026-001",
     name: "Dr. Eleanor Vance",
+    email: "eleanor.vance@university.edu",
     department: "Computer Science & Engineering",
     batch: "2026",
     section: "Honors",
@@ -517,25 +521,25 @@ export const CertificateStudioView: React.FC<CertificateStudioViewProps> = ({
   // Active Template Preset Name
   const [activePreset, setActivePreset] = useState<string>("academic");
 
-  // Step 3: Scoping & Range Filtering State
+  // Step 1/4: Scoping & Range Filtering State
   const [generationScope, setGenerationScope] = useState<"all" | "range" | "filter">("all");
   const [customRangeText, setCustomRangeText] = useState<string>("1-20, 25-40");
   const [filterTeam, setFilterTeam] = useState<string>("all");
   const [filterDept, setFilterDept] = useState<string>("all");
 
-  // Selected Student for Live Preview
-  const [selectedStudentIndex, setSelectedStudentIndex] = useState(0);
+  // Selected Student Index for Live Navigator Preview
+  const [previewStudentIndex, setPreviewStudentIndex] = useState(0);
 
-  // Active Student: Depends on whether user is in individual custom mode or sheet mode
+  // Active Student being rendered right now
   const activeStudent: StudentRecord = useMemo(() => {
-    if (dataSourceMode === "individual") {
+    if (dataMode === "individual") {
       return customStudent;
     }
-    if (students.length > 0 && students[selectedStudentIndex]) {
-      return students[selectedStudentIndex];
+    if (students.length > 0 && students[previewStudentIndex]) {
+      return students[previewStudentIndex];
     }
     return customStudent;
-  }, [dataSourceMode, customStudent, students, selectedStudentIndex]);
+  }, [dataMode, customStudent, students, previewStudentIndex]);
 
   // Selected Element for Inspector
   const [selectedElementId, setSelectedElementId] = useState<string | null>("name");
@@ -569,7 +573,7 @@ export const CertificateStudioView: React.FC<CertificateStudioViewProps> = ({
   });
   const cancelRef = useRef(false);
 
-  // Extract distinct teams & departments for Step 3 filter
+  // Extract distinct teams & departments
   const distinctTeams = useMemo(() => {
     const set = new Set<string>();
     students.forEach((s) => {
@@ -587,9 +591,9 @@ export const CertificateStudioView: React.FC<CertificateStudioViewProps> = ({
     return Array.from(set);
   }, [students]);
 
-  // Compute records targeted by Step 3 scoping criteria
+  // Compute records targeted by scoping criteria
   const targetedRecords = useMemo(() => {
-    if (dataSourceMode === "individual") {
+    if (dataMode === "individual") {
       return [customStudent];
     }
     if (students.length === 0) {
@@ -614,7 +618,7 @@ export const CertificateStudioView: React.FC<CertificateStudioViewProps> = ({
     }
 
     return students;
-  }, [dataSourceMode, customStudent, students, generationScope, customRangeText, filterTeam, filterDept]);
+  }, [dataMode, customStudent, students, generationScope, customRangeText, filterTeam, filterDept]);
 
   // Calculate Element Bounding Box on Canvas
   const getElementBounds = useCallback(
@@ -648,7 +652,6 @@ export const CertificateStudioView: React.FC<CertificateStudioViewProps> = ({
     []
   );
 
-  // Convert Mouse Coordinates to Canvas Space
   const getCanvasCoords = useCallback((e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return { x: 0, y: 0 };
@@ -725,6 +728,7 @@ export const CertificateStudioView: React.FC<CertificateStudioViewProps> = ({
         y: coords.y - hitEl.y,
       });
       setCanvasCursor("grabbing");
+      setActiveTab("fields");
     } else {
       setSelectedElementId(null);
       setSnapGuides({});
@@ -745,10 +749,10 @@ export const CertificateStudioView: React.FC<CertificateStudioViewProps> = ({
       const updated = CertificateTemplate.fromJSON(template.toJSON());
       if (selectedEl.type === "text") {
         const newSize = Math.max(12, Math.min(180, Math.round(resizeInitial.initialVal + delta * 0.4)));
-        updated.updateElement(selectedEl.id, { fontSize: newSize });
+        updated.updateElement(selectedEl.id, { fontSize: newSize } as any);
       } else if (selectedEl.type === "qr") {
         const newSize = Math.max(60, Math.min(400, Math.round(resizeInitial.initialVal + delta * 0.6)));
-        updated.updateElement(selectedEl.id, { size: newSize });
+        updated.updateElement(selectedEl.id, { size: newSize } as any);
       }
       setTemplate(updated);
       return;
@@ -856,7 +860,7 @@ export const CertificateStudioView: React.FC<CertificateStudioViewProps> = ({
   }, [selectedElementId, template]);
 
   // =========================================================================
-  // RE-RENDER PREVIEW CANVAS (Runs in Step 2 & Live Preview)
+  // RE-RENDER PREVIEW CANVAS (Always Active)
   // =========================================================================
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -933,7 +937,7 @@ export const CertificateStudioView: React.FC<CertificateStudioViewProps> = ({
         }
       }
     );
-  }, [template, activeStudent, bgImage, selectedElementId, snapGuides, getElementBounds, currentStep]);
+  }, [template, activeStudent, bgImage, selectedElementId, snapGuides, getElementBounds]);
 
   // Background & Font Handlers
   const handleBgUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -949,6 +953,7 @@ export const CertificateStudioView: React.FC<CertificateStudioViewProps> = ({
         updated.height = img.naturalHeight || 1080;
         updated.showDecorativeBorders = false;
         setTemplate(updated);
+        setActiveTab("artwork");
       };
       img.src = evt.target?.result as string;
     };
@@ -969,13 +974,26 @@ export const CertificateStudioView: React.FC<CertificateStudioViewProps> = ({
     }
   };
 
-  const addDynamicTagElement = (tag: string) => {
+  // Select or Add Dynamic Field to Canvas
+  const handleSelectOrAddField = (tag: string, defaultLabel: string, defaultSize: number = 32) => {
+    const elements = template.getElements();
+    const existing = elements.find(
+      (el) => el.type === "text" && (el as TextElement).text.includes(tag)
+    );
+
+    if (existing) {
+      setSelectedElementId(existing.id);
+      setActiveTab("fields");
+      return;
+    }
+
+    // Add new
     const newEl = new TextElement({
       id: `text-${Date.now()}`,
       x: template.width / 2,
       y: template.height / 2,
       text: tag,
-      fontSize: 32,
+      fontSize: defaultSize,
       fontFamily: "Outfit",
       color: "#38BDF8",
       align: "center",
@@ -985,9 +1003,8 @@ export const CertificateStudioView: React.FC<CertificateStudioViewProps> = ({
     updated.addElement(newEl);
     setTemplate(updated);
     setSelectedElementId(newEl.id);
+    setActiveTab("fields");
   };
-
-  const addTextElement = () => addDynamicTagElement("New Text Layer");
 
   const addQrElement = () => {
     const newQr = new QrElement({
@@ -1001,6 +1018,7 @@ export const CertificateStudioView: React.FC<CertificateStudioViewProps> = ({
     updated.addElement(newQr);
     setTemplate(updated);
     setSelectedElementId(newQr.id);
+    setActiveTab("fields");
   };
 
   const removeElement = (id: string) => {
@@ -1092,216 +1110,329 @@ export const CertificateStudioView: React.FC<CertificateStudioViewProps> = ({
     }
   };
 
+  // List of standard certificate fields for Tab 3 Information Placement
+  const availableFields = [
+    { label: "Recipient Full Name", tag: "{{Name}}", desc: "Student or Award Winner Name", defaultSize: 64 },
+    { label: "Course Teacher / Advisor", tag: "{{Course_Teacher}}", desc: "Faculty Advisor or Supervisor", defaultSize: 22 },
+    { label: "Contest Team Name", tag: "{{Team_Name}}", desc: "Participating Team", defaultSize: 24 },
+    { label: "Academic Department", tag: "{{Department}}", desc: "Faculty / Major", defaultSize: 24 },
+    { label: "Student Roll / ID", tag: "{{Student_ID}}", desc: "Official University ID", defaultSize: 18 },
+    { label: "Award / Rank / Position", tag: "{{Position}}", desc: "Champion, Runner-Up, Participant", defaultSize: 26 },
+    { label: "Project Title", tag: "{{Project_Title}}", desc: "Submission or Project Title", defaultSize: 22 },
+    { label: "Issue Date", tag: "{{Date}}", desc: "Event or Graduation Date", defaultSize: 18 },
+    { label: "Cert Hash / ID", tag: "{{Certificate_No}}", desc: "Unique Verification Code", defaultSize: 16 },
+  ];
+
   return (
-    <div className="w-full space-y-5">
-      {/* ========================================================================= */}
-      {/* GUIDED 3-STEP PIPELINE NAVIGATION HEADER                                 */}
-      {/* ========================================================================= */}
-      <div className="p-4 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-2xs space-y-3">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div className="flex items-center gap-2.5">
-            <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/60 border border-blue-200 dark:border-blue-800 text-blue-600 dark:text-blue-400">
-              <Award className="w-5 h-5" />
-            </div>
-            <div>
-              <h2 className="text-lg font-bold text-slate-900 dark:text-white tracking-tight">
-                Certificate Studio & Guided Generation Engine
-              </h2>
-              <p className="text-xs text-slate-500 dark:text-slate-400">
-                Step-by-step workflow: Connect data & fields ➔ Design canvas ➔ Scope generation (Single or Custom Ranges).
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2">
-            <Badge variant="primary">
-              {dataSourceMode === "individual"
-                ? "One-Off Custom Mode"
-                : `${students.length} Records Connected`}
-            </Badge>
-          </div>
-        </div>
-
-        {/* 3-Step Guided Stepper Bar */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 pt-2 border-t border-slate-100 dark:border-slate-800/80">
-          <button
-            type="button"
-            onClick={() => setCurrentStep(1)}
-            className={`p-3 rounded-xl border text-left cursor-pointer transition-all flex items-center gap-3 ${
-              currentStep === 1
-                ? "bg-blue-50/80 dark:bg-blue-950/40 border-blue-500 text-blue-900 dark:text-blue-100 shadow-2xs"
-                : "bg-slate-50/70 dark:bg-slate-950/40 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-            }`}
-          >
-            <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
-              currentStep === 1 ? "bg-blue-600 text-white" : "bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
-            }`}>
-              1
-            </div>
-            <div className="min-w-0">
-              <h4 className="text-xs font-bold text-slate-900 dark:text-white">Data & Fields</h4>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                {dataSourceMode === "individual" ? "One-Off Custom Entry" : `${students.length} Sheet Rows`}
-              </p>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setCurrentStep(2)}
-            className={`p-3 rounded-xl border text-left cursor-pointer transition-all flex items-center gap-3 ${
-              currentStep === 2
-                ? "bg-blue-50/80 dark:bg-blue-950/40 border-blue-500 text-blue-900 dark:text-blue-100 shadow-2xs"
-                : "bg-slate-50/70 dark:bg-slate-950/40 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-            }`}
-          >
-            <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
-              currentStep === 2 ? "bg-blue-600 text-white" : "bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
-            }`}>
-              2
-            </div>
-            <div className="min-w-0">
-              <h4 className="text-xs font-bold text-slate-900 dark:text-white">Design & Canvas</h4>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                Photoshop Template, Fonts & Drag-and-Drop
-              </p>
-            </div>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => setCurrentStep(3)}
-            className={`p-3 rounded-xl border text-left cursor-pointer transition-all flex items-center gap-3 ${
-              currentStep === 3
-                ? "bg-blue-50/80 dark:bg-blue-950/40 border-blue-500 text-blue-900 dark:text-blue-100 shadow-2xs"
-                : "bg-slate-50/70 dark:bg-slate-950/40 border-slate-200 dark:border-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
-            }`}
-          >
-            <div className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
-              currentStep === 3 ? "bg-blue-600 text-white" : "bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300"
-            }`}>
-              3
-            </div>
-            <div className="min-w-0">
-              <h4 className="text-xs font-bold text-slate-900 dark:text-white">Generate & Scope</h4>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate">
-                Single or Bulk (e.g. Rows 20–30, 40–70)
-              </p>
-            </div>
-          </button>
-        </div>
-      </div>
+    <div className="w-full space-y-4">
+      {/* Hidden file inputs */}
+      <input
+        ref={bgInputRef}
+        type="file"
+        accept="image/*"
+        onChange={handleBgUpload}
+        className="hidden"
+      />
+      <input
+        ref={fontInputRef}
+        type="file"
+        accept=".ttf,.otf"
+        onChange={handleCustomFontUpload}
+        className="hidden"
+      />
 
       {/* ========================================================================= */}
-      {/* STEP 1: DATA SOURCE & FIELD MAPPING VIEW                                 */}
+      {/* MAIN TWO-COLUMN UNIFIED WORKFLOW STUDIO                                   */}
+      {/* Left (8 cols): Always-Visible Interactive Canvas with Live Flip-Through  */}
+      {/* Right (4 cols): Logical 4-Phase Task Control Panel                        */}
       {/* ========================================================================= */}
-      {currentStep === 1 && (
-        <div className="space-y-4">
-          <Card padding="md" className="space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 dark:border-slate-800 pb-3">
-              <div>
-                <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-                  Select Data Ingestion Mode
-                </h3>
-                <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                  Choose between connected spreadsheet data or filling in a one-off custom individual certificate.
-                </p>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+        
+        {/* ======================================================================= */}
+        {/* LEFT CANVAS WORKSPACE (ALWAYS PROMINENT & VISIBLE)                      */}
+        {/* ======================================================================= */}
+        <div className="lg:col-span-8 space-y-3">
+          <Card padding="sm" className="relative overflow-hidden bg-slate-100 dark:bg-slate-950 flex flex-col items-center border border-slate-200 dark:border-slate-800 shadow-2xs">
+            
+            {/* Live Recipient Flip-Through Navigator Header */}
+            <div className="w-full flex items-center justify-between p-2.5 bg-white dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 rounded-t-xl text-xs gap-2">
+              <div className="flex items-center gap-2 min-w-0">
+                <UserCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
+                <span className="text-slate-500 dark:text-slate-400 font-medium">Live Previewing:</span>
+
+                {dataMode === "sheet" && students.length > 0 ? (
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <button
+                      onClick={() => setPreviewStudentIndex((i) => Math.max(0, i - 1))}
+                      disabled={previewStudentIndex === 0}
+                      className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 cursor-pointer"
+                      title="Previous Recipient"
+                    >
+                      <ChevronLeft className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+                    </button>
+                    <span className="font-bold text-slate-900 dark:text-white truncate max-w-[160px]">
+                      {activeStudent.name}
+                    </span>
+                    <button
+                      onClick={() => setPreviewStudentIndex((i) => Math.min(students.length - 1, i + 1))}
+                      disabled={previewStudentIndex >= students.length - 1}
+                      className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-30 cursor-pointer"
+                      title="Next Recipient"
+                    >
+                      <ChevronRight className="w-4 h-4 text-slate-600 dark:text-slate-400" />
+                    </button>
+                    <Badge variant="primary">{previewStudentIndex + 1}/{students.length}</Badge>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="font-bold text-slate-900 dark:text-white truncate">{activeStudent.name}</span>
+                    <Badge variant="success">Custom One-Off</Badge>
+                  </div>
+                )}
               </div>
 
+              {/* Canvas Zoom Controls */}
+              <div className="flex items-center gap-1">
+                <button
+                  onClick={() => setCanvasZoom((z) => Math.max(0.5, z - 0.1))}
+                  className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 cursor-pointer"
+                  title="Zoom Out"
+                >
+                  <ZoomOut className="w-3.5 h-3.5" />
+                </button>
+                <span className="text-[11px] font-mono text-slate-400 w-9 text-center">
+                  {Math.round(canvasZoom * 100)}%
+                </span>
+                <button
+                  onClick={() => setCanvasZoom((z) => Math.min(1.5, z + 0.1))}
+                  className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 cursor-pointer"
+                  title="Zoom In"
+                >
+                  <ZoomIn className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  onClick={() => setCanvasZoom(1)}
+                  className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 cursor-pointer"
+                  title="Reset Zoom"
+                >
+                  <Maximize2 className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Canvas Display Viewport with Real-Time Mouse Events */}
+            <div className="w-full p-4 flex items-center justify-center overflow-auto bg-slate-200/60 dark:bg-slate-950/80 min-h-[500px]">
+              <canvas
+                ref={canvasRef}
+                onMouseDown={handleCanvasMouseDown}
+                onMouseMove={handleCanvasMouseMove}
+                onMouseUp={handleCanvasMouseUp}
+                onMouseLeave={handleCanvasMouseLeave}
+                className="max-w-full h-auto rounded-xl shadow-lg border border-slate-300 dark:border-slate-800 select-none transition-transform"
+                style={{
+                  maxHeight: "560px",
+                  cursor: canvasCursor,
+                  transform: `scale(${canvasZoom})`,
+                  transformOrigin: "center center",
+                }}
+              />
+            </div>
+
+            {/* Interactive Canvas Footer */}
+            <div className="w-full flex flex-wrap items-center justify-between p-3 bg-white dark:bg-slate-900/90 border-t border-slate-200 dark:border-slate-800 rounded-b-xl gap-2 text-xs">
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => setDataSourceMode("sheet")}
-                  className={`px-3 py-1.5 rounded-xl font-semibold text-xs border cursor-pointer transition-all ${
-                    dataSourceMode === "sheet"
-                      ? "bg-blue-600 text-white border-blue-600 shadow-2xs"
-                      : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700"
-                  }`}
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  leftIcon={<Download className="w-3.5 h-3.5 text-blue-500" />}
+                  onClick={() => handleDownloadSingle("png")}
                 >
-                  Bulk Spreadsheet Data ({students.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDataSourceMode("individual")}
-                  className={`px-3 py-1.5 rounded-xl font-semibold text-xs border cursor-pointer transition-all ${
-                    dataSourceMode === "individual"
-                      ? "bg-blue-600 text-white border-blue-600 shadow-2xs"
-                      : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-700"
-                  }`}
+                  Download PNG
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  leftIcon={<Download className="w-3.5 h-3.5 text-emerald-500" />}
+                  onClick={() => handleDownloadSingle("pdf")}
                 >
-                  One-Off Custom Individual Entry
-                </button>
+                  Download PDF
+                </Button>
+              </div>
+
+              <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400">
+                <span className="flex items-center gap-1">
+                  <Move className="w-3 h-3 text-indigo-500" />
+                  <span>Drag & Drop with mouse | Arrow keys to nudge (1px/10px)</span>
+                </span>
+                <span>•</span>
+                <span className="font-mono">
+                  {template.width} × {template.height}px
+                </span>
               </div>
             </div>
+          </Card>
+        </div>
 
-            {dataSourceMode === "sheet" ? (
-              <div className="space-y-4">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
-                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-1">
-                    <span className="text-slate-400 font-medium">Total Connected Records</span>
-                    <h4 className="text-xl font-bold text-slate-900 dark:text-white">
-                      {students.length} <span className="text-xs text-slate-400 font-normal">Students</span>
-                    </h4>
-                  </div>
+        {/* ======================================================================= */}
+        {/* RIGHT CONTROL PANEL (DEEPLY LOGICAL 4-PHASE WORKFLOW)                  */}
+        {/* ======================================================================= */}
+        <div className="lg:col-span-4 space-y-3">
+          
+          {/* Top 4-Phase Stepper Tabs */}
+          <div className="grid grid-cols-4 p-1 rounded-xl bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-[11px] font-bold">
+            <button
+              onClick={() => setActiveTab("data")}
+              className={`py-1.5 rounded-lg text-center cursor-pointer transition-all ${
+                activeTab === "data"
+                  ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-2xs"
+                  : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+              }`}
+            >
+              1. Data
+            </button>
+            <button
+              onClick={() => setActiveTab("artwork")}
+              className={`py-1.5 rounded-lg text-center cursor-pointer transition-all ${
+                activeTab === "artwork"
+                  ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-2xs"
+                  : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+              }`}
+            >
+              2. Artwork
+            </button>
+            <button
+              onClick={() => setActiveTab("fields")}
+              className={`py-1.5 rounded-lg text-center cursor-pointer transition-all ${
+                activeTab === "fields"
+                  ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-2xs"
+                  : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+              }`}
+            >
+              3. Fields
+            </button>
+            <button
+              onClick={() => setActiveTab("export")}
+              className={`py-1.5 rounded-lg text-center cursor-pointer transition-all ${
+                activeTab === "export"
+                  ? "bg-white dark:bg-slate-800 text-blue-600 dark:text-blue-400 shadow-2xs"
+                  : "text-slate-500 hover:text-slate-900 dark:hover:text-white"
+              }`}
+            >
+              4. Export
+            </button>
+          </div>
 
-                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-1">
-                    <span className="text-slate-400 font-medium">Contest Teams Detected</span>
-                    <h4 className="text-xl font-bold text-amber-600 dark:text-amber-400">
-                      {distinctTeams.length} <span className="text-xs text-slate-400 font-normal">Teams</span>
-                    </h4>
-                  </div>
+          {/* ===================================================================== */}
+          {/* TAB 1: DATA & RECIPIENTS (SPREADSHEET SCOPING OR INDIVIDUAL CUSTOM)    */}
+          {/* ===================================================================== */}
+          {activeTab === "data" && (
+            <Card padding="md" className="space-y-4 text-xs">
+              <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+                <span className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-xs flex items-center gap-1.5">
+                  <Database className="w-4 h-4 text-blue-500" />
+                  <span>Recipient Data Source</span>
+                </span>
+                <span className="text-[11px] text-slate-400">Step 1 of 4</span>
+              </div>
 
-                  <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-1">
-                    <span className="text-slate-400 font-medium">Departments</span>
-                    <h4 className="text-xl font-bold text-emerald-600 dark:text-emerald-400">
-                      {distinctDepts.length} <span className="text-xs text-slate-400 font-normal">Academic Depts</span>
-                    </h4>
-                  </div>
-                </div>
+              {/* Mode Toggle */}
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDataMode("sheet")}
+                  className={`p-2 rounded-xl text-center font-semibold border cursor-pointer ${
+                    dataMode === "sheet"
+                      ? "bg-blue-50 text-blue-700 border-blue-400 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800 shadow-2xs"
+                      : "bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800"
+                  }`}
+                >
+                  Spreadsheet ({students.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDataMode("individual")}
+                  className={`p-2 rounded-xl text-center font-semibold border cursor-pointer ${
+                    dataMode === "individual"
+                      ? "bg-blue-50 text-blue-700 border-blue-400 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800 shadow-2xs"
+                      : "bg-slate-50 dark:bg-slate-900 text-slate-600 dark:text-slate-400 border-slate-200 dark:border-slate-800"
+                  }`}
+                >
+                  One-Off Custom
+                </button>
+              </div>
 
-                {/* Field Mapping Guide */}
-                <div className="space-y-2 pt-2">
-                  <h4 className="text-xs font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider">
-                    Certificate Field Mapping Reference:
-                  </h4>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 text-xs">
-                    {[
-                      { label: "Recipient Name", tag: "{{Name}}", desc: "Maps to student's full name" },
-                      { label: "Course Teacher / Advisor", tag: "{{Course_Teacher}}", desc: "Assigned faculty advisor" },
-                      { label: "Contest Team", tag: "{{Team_Name}}", desc: "Participant's team name" },
-                      { label: "Academic Department", tag: "{{Department}}", desc: "Student department or faculty" },
-                      { label: "Student ID / Roll", tag: "{{Student_ID}}", desc: "Unique registration code" },
-                      { label: "Award Title / Rank", tag: "{{Position}}", desc: "Winner rank or honor title" },
-                      { label: "Project Title", tag: "{{Project_Title}}", desc: "Contest project submission title" },
-                      { label: "Issue Date", tag: "{{Date}}", desc: "Formatted certificate date" },
-                      { label: "Verification Hash", tag: "{{Certificate_No}}", desc: "Unique QR serial hash" },
-                    ].map((mapItem) => (
-                      <div
-                        key={mapItem.label}
-                        className="p-2.5 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-1 shadow-2xs"
-                      >
-                        <div className="flex items-center justify-between">
-                          <span className="font-bold text-slate-900 dark:text-white text-xs">{mapItem.label}</span>
-                          <span className="font-mono text-[11px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 dark:bg-blue-950/60 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
-                            {mapItem.tag}
+              {dataMode === "sheet" ? (
+                <div className="space-y-3">
+                  <div className="space-y-1.5">
+                    <label className={THEME.typography.label}>Target Generation Scope:</label>
+                    <div className="space-y-1.5">
+                      <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                        <input
+                          type="radio"
+                          name="scope"
+                          checked={generationScope === "all"}
+                          onChange={() => setGenerationScope("all")}
+                          className="text-blue-600"
+                        />
+                        <span className="font-semibold text-slate-800 dark:text-slate-200">
+                          All Records ({students.length} Total)
+                        </span>
+                      </label>
+
+                      <label className="flex items-center gap-2 cursor-pointer p-2 rounded-lg hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                        <input
+                          type="radio"
+                          name="scope"
+                          checked={generationScope === "range"}
+                          onChange={() => setGenerationScope("range")}
+                          className="text-blue-600"
+                        />
+                        <div className="flex-1">
+                          <span className="font-semibold text-slate-800 dark:text-slate-200">
+                            Custom Row Range
+                          </span>
+                          <span className="text-[11px] text-slate-400 block">
+                            e.g. 1–3 for Champions, 4–50 for Participants
                           </span>
                         </div>
-                        <p className="text-[11px] text-slate-500 dark:text-slate-400">{mapItem.desc}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            ) : (
-              /* One-Off Individual Custom Entry Form */
-              <div className="space-y-4">
-                <div className="p-3 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 text-xs text-blue-900 dark:text-blue-200">
-                  Fill in this form to generate a custom certificate for a specific person (e.g. guest speaker, VIP, or individual award winner) without needing an Excel sheet.
-                </div>
+                      </label>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+                      {generationScope === "range" && (
+                        <div className="pl-6 space-y-1">
+                          <input
+                            type="text"
+                            value={customRangeText}
+                            onChange={(e) => setCustomRangeText(e.target.value)}
+                            placeholder="e.g. 1-10, 20-30, 45"
+                            className={`${THEME.surface.input} font-mono py-1`}
+                          />
+                          <span className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold block">
+                            Matched: {targetedRecords.length} student certificates
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 text-[11px] text-blue-800 dark:text-blue-300">
+                    Use the ◀ / ▶ arrows above the canvas to preview each recipient's actual certificate before generating!
+                  </div>
+
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    className="w-full justify-center"
+                    rightIcon={<ChevronRight className="w-4 h-4" />}
+                    onClick={() => setActiveTab("artwork")}
+                  >
+                    Next: Artwork & Template
+                  </Button>
+                </div>
+              ) : (
+                /* One-Off Individual Custom Entry Form */
+                <div className="space-y-3">
                   <div>
-                    <label className={THEME.typography.label}>Full Name:</label>
+                    <label className={THEME.typography.label}>Recipient Name:</label>
                     <input
                       type="text"
                       value={customStudent.name}
@@ -1311,7 +1442,7 @@ export const CertificateStudioView: React.FC<CertificateStudioViewProps> = ({
                   </div>
 
                   <div>
-                    <label className={THEME.typography.label}>Student ID / Roll / Code:</label>
+                    <label className={THEME.typography.label}>ID / Roll:</label>
                     <input
                       type="text"
                       value={customStudent.id}
@@ -1321,17 +1452,7 @@ export const CertificateStudioView: React.FC<CertificateStudioViewProps> = ({
                   </div>
 
                   <div>
-                    <label className={THEME.typography.label}>Department / Faculty:</label>
-                    <input
-                      type="text"
-                      value={customStudent.department || ""}
-                      onChange={(e) => setCustomStudent({ ...customStudent, department: e.target.value })}
-                      className={`${THEME.surface.input} mt-1`}
-                    />
-                  </div>
-
-                  <div>
-                    <label className={THEME.typography.label}>Course Teacher / Advisor / Supervisor:</label>
+                    <label className={THEME.typography.label}>Course Teacher / Advisor:</label>
                     <input
                       type="text"
                       value={String(customStudent["Course Teacher / Advisor"] || customStudent.advisor || "")}
@@ -1362,7 +1483,7 @@ export const CertificateStudioView: React.FC<CertificateStudioViewProps> = ({
                   </div>
 
                   <div>
-                    <label className={THEME.typography.label}>Award Title / Rank / Position:</label>
+                    <label className={THEME.typography.label}>Award / Position Title:</label>
                     <input
                       type="text"
                       value={customStudent.extra?.position || ""}
@@ -1375,573 +1496,54 @@ export const CertificateStudioView: React.FC<CertificateStudioViewProps> = ({
                       className={`${THEME.surface.input} mt-1`}
                     />
                   </div>
-                </div>
-              </div>
-            )}
 
-            <div className="flex justify-end pt-3 border-t border-slate-200 dark:border-slate-800">
-              <Button
-                variant="primary"
-                rightIcon={<ChevronRight className="w-4 h-4" />}
-                onClick={() => setCurrentStep(2)}
-              >
-                Proceed to Step 2: Design Certificate Layout
-              </Button>
-            </div>
-          </Card>
-        </div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* STEP 2: CERTIFICATE DESIGN & CANVAS LAYOUT VIEW                          */}
-      {/* ========================================================================= */}
-      {currentStep === 2 && (
-        <div className="space-y-4">
-          {/* Preset Picker & Dimensions Bar */}
-          <div className="p-3 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs shadow-2xs">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                Designer Presets:
-              </span>
-              {[
-                { key: "academic", label: "University Honor", icon: "🏛️" },
-                { key: "hackathon", label: "Contest Champion", icon: "🏆" },
-                { key: "summit", label: "Tech Summit", icon: "🌐" },
-                { key: "minimal", label: "Swiss Modern", icon: "📐" },
-                { key: "illustrator-blank", label: "Photoshop/Illustrator Blank Slate", icon: "🎨" },
-              ].map((preset) => (
-                <button
-                  key={preset.key}
-                  onClick={() => handleApplyPreset(preset.key)}
-                  className={`px-3 py-1.5 rounded-xl font-medium border transition-all cursor-pointer flex items-center gap-1.5 ${
-                    activePreset === preset.key
-                      ? "bg-blue-50 text-blue-700 border-blue-300 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800 shadow-2xs"
-                      : "bg-slate-50 text-slate-700 border-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700"
-                  }`}
-                >
-                  <span>{preset.icon}</span>
-                  <span>{preset.label}</span>
-                </button>
-              ))}
-            </div>
-
-            {/* Dimension Aspect Presets */}
-            <div className="flex items-center gap-2">
-              <span className="text-[11px] font-bold text-slate-400 dark:text-slate-500 uppercase tracking-wider">
-                Dimensions:
-              </span>
-              <select
-                onChange={(e) => handleDimensionsPreset(e.target.value as any)}
-                className={`${THEME.surface.select} py-1 text-xs`}
-                value={
-                  template.width === 1920 && template.height === 1080
-                    ? "web"
-                    : template.width === 3508 && template.height === 2480
-                    ? "a4-land"
-                    : template.width === 2480 && template.height === 3508
-                    ? "a4-port"
-                    : template.width === 3300 && template.height === 2550
-                    ? "us-letter"
-                    : "web"
-                }
-              >
-                <option value="web">🖥️ Web 16:9 (1920 × 1080 px)</option>
-                <option value="a4-land">📜 Print A4 Landscape (3508 × 2480 px, 300 DPI)</option>
-                <option value="a4-port">📄 Print A4 Portrait (2480 × 3508 px, 300 DPI)</option>
-                <option value="us-letter">🖨️ US Letter Landscape (3300 × 2550 px)</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Dynamic Placeholder Tag Inserter Strip */}
-          <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 flex items-center gap-2 flex-wrap text-xs">
-            <span className="text-[11px] font-bold text-slate-500 dark:text-slate-400 uppercase tracking-wider flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5 text-amber-500" />
-              <span>Insert Dynamic Placeholder:</span>
-            </span>
-            {[
-              { label: "Name", tag: "{{Name}}" },
-              { label: "Student ID", tag: "{{Student_ID}}" },
-              { label: "Advisor / Teacher", tag: "{{Course_Teacher}}" },
-              { label: "Team Name", tag: "{{Team_Name}}" },
-              { label: "Department", tag: "{{Department}}" },
-              { label: "College", tag: "{{College}}" },
-              { label: "Project Title", tag: "{{Project_Title}}" },
-              { label: "Rank / Position", tag: "{{Position}}" },
-              { label: "Issue Date", tag: "{{Date}}" },
-              { label: "Cert Hash", tag: "{{Certificate_No}}" },
-            ].map((item) => (
-              <button
-                key={item.label}
-                type="button"
-                onClick={() => addDynamicTagElement(item.tag)}
-                className="px-2 py-0.5 rounded-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 font-mono text-[11px] hover:border-blue-400 hover:text-blue-600 dark:hover:text-blue-400 transition-colors cursor-pointer shadow-2xs"
-              >
-                +{item.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Main Studio Grid: Left Canvas, Right Inspector */}
-          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-            {/* Left Side: Interactive Canvas (8 cols) */}
-            <div className="lg:col-span-8 space-y-3">
-              <Card padding="sm" className="relative overflow-hidden bg-slate-100 dark:bg-slate-950 flex flex-col items-center border border-slate-200 dark:border-slate-800">
-                {/* Live Student Record Switcher & Canvas Controls */}
-                <div className="w-full flex items-center justify-between p-2.5 bg-white dark:bg-slate-900/90 border-b border-slate-200 dark:border-slate-800 rounded-t-xl text-xs gap-2">
-                  <div className="flex items-center gap-2 min-w-0">
-                    <UserCheck className="w-4 h-4 text-blue-600 dark:text-blue-400 shrink-0" />
-                    <span className="text-slate-500 dark:text-slate-400 font-medium">Live Previewing:</span>
-                    <span className="font-bold text-slate-900 dark:text-white truncate">{activeStudent.name}</span>
-                    <Badge variant="primary">{activeStudent.id}</Badge>
-                  </div>
-
-                  <div className="flex items-center gap-2">
-                    {dataSourceMode === "sheet" && students.length > 1 && (
-                      <div className="flex items-center gap-1.5">
-                        <span className="text-slate-400 text-[11px]">
-                          Row {selectedStudentIndex + 1}/{students.length}
-                        </span>
-                        <select
-                          value={selectedStudentIndex}
-                          onChange={(e) => setSelectedStudentIndex(Number(e.target.value))}
-                          className={`${THEME.surface.inputSm} w-32`}
-                        >
-                          {students.map((s, idx) => (
-                            <option key={s.id} value={idx}>
-                              {idx + 1}. {s.name}
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-                    )}
-
-                    {/* Canvas Zoom Controls */}
-                    <div className="flex items-center gap-1 border-l border-slate-200 dark:border-slate-800 pl-2">
-                      <button
-                        onClick={() => setCanvasZoom((z) => Math.max(0.5, z - 0.1))}
-                        className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 cursor-pointer"
-                        title="Zoom Out"
-                      >
-                        <ZoomOut className="w-3.5 h-3.5" />
-                      </button>
-                      <span className="text-[11px] font-mono text-slate-400 w-9 text-center">
-                        {Math.round(canvasZoom * 100)}%
-                      </span>
-                      <button
-                        onClick={() => setCanvasZoom((z) => Math.min(1.5, z + 0.1))}
-                        className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 cursor-pointer"
-                        title="Zoom In"
-                      >
-                        <ZoomIn className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={() => setCanvasZoom(1)}
-                        className="p-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 cursor-pointer"
-                        title="Reset Zoom"
-                      >
-                        <Maximize2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Canvas Display Viewport with Mouse Events */}
-                <div className="w-full p-4 flex items-center justify-center overflow-auto bg-slate-200/60 dark:bg-slate-950/80 min-h-[480px]">
-                  <canvas
-                    ref={canvasRef}
-                    onMouseDown={handleCanvasMouseDown}
-                    onMouseMove={handleCanvasMouseMove}
-                    onMouseUp={handleCanvasMouseUp}
-                    onMouseLeave={handleCanvasMouseLeave}
-                    className="max-w-full h-auto rounded-xl shadow-lg border border-slate-300 dark:border-slate-800 select-none transition-transform"
-                    style={{
-                      maxHeight: "560px",
-                      cursor: canvasCursor,
-                      transform: `scale(${canvasZoom})`,
-                      transformOrigin: "center center",
-                    }}
-                  />
-                </div>
-
-                {/* Canvas Toolbar Footer */}
-                <div className="w-full flex flex-wrap items-center justify-between p-3 bg-white dark:bg-slate-900/90 border-t border-slate-200 dark:border-slate-800 rounded-b-xl gap-2 text-xs">
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      leftIcon={<Plus className="w-3.5 h-3.5" />}
-                      onClick={addTextElement}
-                    >
-                      Add Text Layer
-                    </Button>
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      leftIcon={<QrCode className="w-3.5 h-3.5 text-blue-500" />}
-                      onClick={addQrElement}
-                    >
-                      Add Dynamic QR
-                    </Button>
-                  </div>
-
-                  <div className="flex items-center gap-3 text-[11px] text-slate-500 dark:text-slate-400">
-                    <span className="flex items-center gap-1">
-                      <Move className="w-3 h-3 text-indigo-500" />
-                      <span>Click & Drag elements on canvas | Arrow keys to nudge</span>
-                    </span>
-                    <span>•</span>
-                    <span className="font-mono">
-                      {template.width} × {template.height}px
-                    </span>
-                  </div>
-                </div>
-              </Card>
-
-              {/* Bottom Stepper Actions */}
-              <div className="flex items-center justify-between pt-2">
-                <Button variant="secondary" size="sm" onClick={() => setCurrentStep(1)}>
-                  ← Back to Step 1: Data
-                </Button>
-                <Button
-                  variant="primary"
-                  size="sm"
-                  rightIcon={<ChevronRight className="w-4 h-4" />}
-                  onClick={() => setCurrentStep(3)}
-                >
-                  Proceed to Step 3: Scope & Generate →
-                </Button>
-              </div>
-            </div>
-
-            {/* Right Side: Element Inspector & Typography Controls (4 cols) */}
-            <div className="lg:col-span-4 space-y-4">
-              <Card padding="md" className="space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-3">
-                  <div className="flex items-center gap-2">
-                    <Layers className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                    <h3 className="text-sm font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-                      Element Inspector
-                    </h3>
-                  </div>
-                  {selectedElement && (
-                    <button
-                      onClick={() => removeElement(selectedElement.id)}
-                      className="text-rose-500 hover:text-rose-600 dark:hover:text-rose-400 p-1 cursor-pointer"
-                      title="Delete layer"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  )}
-                </div>
-
-                {/* Element Selector Dropdown */}
-                <div>
-                  <label className={THEME.typography.label}>Selected Layer:</label>
-                  <select
-                    value={selectedElementId || ""}
-                    onChange={(e) => setSelectedElementId(e.target.value)}
-                    className={`${THEME.surface.select} mt-1 font-medium`}
+                  <Button
+                    variant="primary"
+                    size="sm"
+                    className="w-full justify-center"
+                    rightIcon={<ChevronRight className="w-4 h-4" />}
+                    onClick={() => setActiveTab("artwork")}
                   >
-                    {template.getElements().map((el) => (
-                      <option key={el.id} value={el.id}>
-                        {el.type === "text"
-                          ? `Text: "${(el as TextElement).text.slice(0, 24)}..."`
-                          : `QR Code (${el.id})`}
-                      </option>
-                    ))}
-                  </select>
+                    Next: Artwork & Template
+                  </Button>
                 </div>
+              )}
+            </Card>
+          )}
 
-                {/* Properties for Text Element */}
-                {selectedElement && selectedElement.type === "text" && (
-                  <div className="space-y-3.5 text-xs">
-                    <div>
-                      <label className={THEME.typography.label}>Text Content / Tags:</label>
-                      <input
-                        type="text"
-                        value={(selectedElement as TextElement).text}
-                        onChange={(e) => updateSelectedElement({ text: e.target.value })}
-                        className={`${THEME.surface.input} mt-1 font-mono text-xs`}
-                      />
-                    </div>
+          {/* ===================================================================== */}
+          {/* TAB 2: ARTWORK & TEMPLATE (ILLUSTRATOR / PHOTOSHOP BACKGROUND)        */}
+          {/* ===================================================================== */}
+          {activeTab === "artwork" && (
+            <Card padding="md" className="space-y-4 text-xs">
+              <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+                <span className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-xs flex items-center gap-1.5">
+                  <Palette className="w-4 h-4 text-purple-500" />
+                  <span>Artwork & Background</span>
+                </span>
+                <span className="text-[11px] text-slate-400">Step 2 of 4</span>
+              </div>
 
-                    {/* Typography: Font Family Selector (Grouped 15+ Google Fonts) */}
-                    <div>
-                      <div className="flex items-center justify-between">
-                        <label className={THEME.typography.label}>Google Font Family:</label>
-                        <span
-                          className="text-[11px] font-bold text-blue-600 dark:text-blue-400 font-mono"
-                          style={{ fontFamily: `"${(selectedElement as TextElement).fontFamily}", sans-serif` }}
-                        >
-                          Sample
-                        </span>
-                      </div>
-                      <select
-                        value={(selectedElement as TextElement).fontFamily}
-                        onChange={(e) => updateSelectedElement({ fontFamily: e.target.value })}
-                        className={`${THEME.surface.select} mt-1 font-medium`}
-                      >
-                        {CERTIFICATE_FONT_GROUPS.map((grp) => (
-                          <optgroup key={grp.group} label={grp.group}>
-                            {grp.fonts.map((f) => (
-                              <option key={f.name} value={f.name}>
-                                {f.label}
-                              </option>
-                            ))}
-                          </optgroup>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Font Size & Weight */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className={THEME.typography.label}>
-                          Font Size: {(selectedElement as TextElement).fontSize}px
-                        </label>
-                        <input
-                          type="range"
-                          min={12}
-                          max={140}
-                          value={(selectedElement as TextElement).fontSize}
-                          onChange={(e) => updateSelectedElement({ fontSize: Number(e.target.value) })}
-                          className="w-full mt-1.5 accent-blue-600 cursor-pointer"
-                        />
-                      </div>
-
-                      <div>
-                        <label className={THEME.typography.label}>Font Weight:</label>
-                        <select
-                          value={(selectedElement as TextElement).fontWeight}
-                          onChange={(e) => updateSelectedElement({ fontWeight: e.target.value })}
-                          className={`${THEME.surface.select} mt-1`}
-                        >
-                          <option value="300">Light (300)</option>
-                          <option value="normal">Regular (400)</option>
-                          <option value="500">Medium (500)</option>
-                          <option value="600">Semi-Bold (600)</option>
-                          <option value="bold">Bold (700)</option>
-                          <option value="800">Extra Bold (800)</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Text Color & Alignment */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className={THEME.typography.label}>Text Color:</label>
-                        <div className="flex items-center gap-2 mt-1">
-                          <input
-                            type="color"
-                            value={(selectedElement as TextElement).color}
-                            onChange={(e) => updateSelectedElement({ color: e.target.value })}
-                            className="w-8 h-8 rounded-lg cursor-pointer bg-transparent border-0 p-0"
-                          />
-                          <input
-                            type="text"
-                            value={(selectedElement as TextElement).color}
-                            onChange={(e) => updateSelectedElement({ color: e.target.value })}
-                            className={`${THEME.surface.input} font-mono text-xs py-1`}
-                          />
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className={THEME.typography.label}>Alignment:</label>
-                        <select
-                          value={(selectedElement as TextElement).align}
-                          onChange={(e) => updateSelectedElement({ align: e.target.value })}
-                          className={`${THEME.surface.select} mt-1`}
-                        >
-                          <option value="left">Left</option>
-                          <option value="center">Center</option>
-                          <option value="right">Right</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Letter Spacing (Tracking) & Text Transform */}
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className={THEME.typography.label}>
-                          Letter Spacing: {(selectedElement as TextElement).letterSpacing || 0}px
-                        </label>
-                        <input
-                          type="range"
-                          min={-2}
-                          max={16}
-                          value={(selectedElement as TextElement).letterSpacing || 0}
-                          onChange={(e) => updateSelectedElement({ letterSpacing: Number(e.target.value) })}
-                          className="w-full mt-1.5 accent-blue-600 cursor-pointer"
-                        />
-                      </div>
-
-                      <div>
-                        <label className={THEME.typography.label}>Text Transform:</label>
-                        <select
-                          value={(selectedElement as TextElement).textTransform || "none"}
-                          onChange={(e) => updateSelectedElement({ textTransform: e.target.value })}
-                          className={`${THEME.surface.select} mt-1`}
-                        >
-                          <option value="none">Normal</option>
-                          <option value="uppercase">UPPERCASE</option>
-                          <option value="lowercase">lowercase</option>
-                        </select>
-                      </div>
-                    </div>
-
-                    {/* Text Shadow / Glow (Essential for contrast on Photoshop/Illustrator artwork) */}
-                    <div className="p-2.5 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[11px] font-bold text-slate-700 dark:text-slate-300">
-                          Drop Shadow & Glow Effect:
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() =>
-                            updateSelectedElement({
-                              shadowColor: (selectedElement as TextElement).shadowColor ? undefined : "rgba(0,0,0,0.8)",
-                              shadowBlur: (selectedElement as TextElement).shadowBlur ? 0 : 8,
-                            })
-                          }
-                          className="text-[10px] text-blue-600 dark:text-blue-400 font-semibold cursor-pointer"
-                        >
-                          {(selectedElement as TextElement).shadowBlur ? "Disable" : "Enable Glow"}
-                        </button>
-                      </div>
-
-                      {(selectedElement as TextElement).shadowBlur ? (
-                        <div className="grid grid-cols-2 gap-2 pt-1">
-                          <div>
-                            <label className="text-[10px] text-slate-400">Glow Blur:</label>
-                            <input
-                              type="range"
-                              min={1}
-                              max={30}
-                              value={(selectedElement as TextElement).shadowBlur || 8}
-                              onChange={(e) => updateSelectedElement({ shadowBlur: Number(e.target.value) })}
-                              className="w-full accent-blue-600"
-                            />
-                          </div>
-                          <div>
-                            <label className="text-[10px] text-slate-400">Glow Color:</label>
-                            <input
-                              type="color"
-                              value={(selectedElement as TextElement).shadowColor || "#000000"}
-                              onChange={(e) => updateSelectedElement({ shadowColor: e.target.value })}
-                              className="w-full h-6 rounded cursor-pointer bg-transparent border-0 p-0"
-                            />
-                          </div>
-                        </div>
-                      ) : null}
-                    </div>
-
-                    {/* X and Y Exact Coordinates */}
-                    <div className="grid grid-cols-2 gap-3 pt-1">
-                      <div>
-                        <label className={THEME.typography.label}>Position X (px):</label>
-                        <input
-                          type="number"
-                          value={selectedElement.x}
-                          onChange={(e) => updateSelectedElement({ x: Number(e.target.value) })}
-                          className={`${THEME.surface.input} mt-1`}
-                        />
-                      </div>
-                      <div>
-                        <label className={THEME.typography.label}>Position Y (px):</label>
-                        <input
-                          type="number"
-                          value={selectedElement.y}
-                          onChange={(e) => updateSelectedElement({ y: Number(e.target.value) })}
-                          className={`${THEME.surface.input} mt-1`}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Properties for QR Element */}
-                {selectedElement && selectedElement.type === "qr" && (
-                  <div className="space-y-3 pt-2 text-xs">
-                    <div>
-                      <label className={THEME.typography.label}>Verification URL / Payload:</label>
-                      <input
-                        type="text"
-                        value={(selectedElement as QrElement).payloadPattern}
-                        onChange={(e) =>
-                          updateSelectedElement({ payloadPattern: e.target.value })
-                        }
-                        className={`${THEME.surface.input} mt-1 font-mono text-xs`}
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className={THEME.typography.label}>Size (px):</label>
-                        <input
-                          type="number"
-                          value={(selectedElement as QrElement).size}
-                          onChange={(e) =>
-                            updateSelectedElement({ size: Number(e.target.value) })
-                          }
-                          className={`${THEME.surface.input} mt-1`}
-                        />
-                      </div>
-
-                      <div>
-                        <label className={THEME.typography.label}>QR Foreground:</label>
-                        <input
-                          type="color"
-                          value={(selectedElement as QrElement).fgColor}
-                          onChange={(e) => updateSelectedElement({ fgColor: e.target.value })}
-                          className="w-full h-9 mt-1 rounded-lg cursor-pointer bg-transparent border-0 p-0"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className={THEME.typography.label}>Position X:</label>
-                        <input
-                          type="number"
-                          value={selectedElement.x}
-                          onChange={(e) => updateSelectedElement({ x: Number(e.target.value) })}
-                          className={`${THEME.surface.input} mt-1`}
-                        />
-                      </div>
-                      <div>
-                        <label className={THEME.typography.label}>Position Y:</label>
-                        <input
-                          type="number"
-                          value={selectedElement.y}
-                          onChange={(e) => updateSelectedElement({ y: Number(e.target.value) })}
-                          className={`${THEME.surface.input} mt-1`}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </Card>
-
-              {/* Background & Decorative Borders Settings */}
-              <Card padding="md" className="space-y-3 text-xs">
-                <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
-                  <span className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-xs">
-                    Artwork & Background
-                  </span>
-                  {bgImage && (
-                    <button
-                      onClick={() => setBgImage(null)}
-                      className="text-rose-500 hover:text-rose-600 text-[11px] cursor-pointer"
-                    >
-                      Remove Background
-                    </button>
-                  )}
+              {/* Illustrator / Photoshop Import Dropzone */}
+              <div
+                onClick={() => bgInputRef.current?.click()}
+                className="p-4 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-purple-500 dark:hover:border-purple-400 bg-slate-50 dark:bg-slate-950/60 text-center cursor-pointer transition-all space-y-1.5"
+              >
+                <div className="w-10 h-10 mx-auto rounded-xl bg-purple-50 dark:bg-purple-950/60 text-purple-600 dark:text-purple-400 flex items-center justify-center">
+                  <UploadCloud className="w-5 h-5" />
                 </div>
+                <h4 className="font-bold text-slate-900 dark:text-white text-xs">
+                  Import Illustrator / Photoshop Template
+                </h4>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Drop high-res PNG, JPEG, or SVG export. Auto-matches aspect ratio.
+                </p>
+              </div>
 
+              {/* Blank Slate Mode Button */}
+              <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-600 dark:text-slate-300">Default Decorative Borders:</span>
+                  <span className="text-slate-600 dark:text-slate-300 font-medium">Default Decorative Borders:</span>
                   <button
                     type="button"
                     onClick={() => {
@@ -1955,309 +1557,320 @@ export const CertificateStudioView: React.FC<CertificateStudioViewProps> = ({
                         : "bg-slate-100 text-slate-600 border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700"
                     }`}
                   >
-                    {template.showDecorativeBorders ? "Enabled (SVG)" : "Disabled (Blank)"}
+                    {template.showDecorativeBorders ? "Enabled (Built-in)" : "Disabled (Photoshop Blank)"}
                   </button>
                 </div>
+                <p className="text-[11px] text-slate-400">
+                  Disable built-in borders when using your own Illustrator design with premade borders.
+                </p>
+              </div>
 
-                {bgImage && (
-                  <div className="space-y-1.5 pt-1">
-                    <div className="flex justify-between text-[11px]">
-                      <span className="text-slate-400">Background Dimmer:</span>
-                      <span className="font-mono text-slate-500">{Math.round((template.backgroundDim || 0) * 100)}%</span>
-                    </div>
-                    <input
-                      type="range"
-                      min={0}
-                      max={0.8}
-                      step={0.05}
-                      value={template.backgroundDim || 0}
-                      onChange={(e) => {
-                        const updated = CertificateTemplate.fromJSON(template.toJSON());
-                        updated.backgroundDim = Number(e.target.value);
-                        setTemplate(updated);
-                      }}
-                      className="w-full accent-blue-600 cursor-pointer"
-                    />
-                  </div>
-                )}
-              </Card>
-            </div>
-          </div>
-        </div>
-      )}
+              {/* Canvas Dimensions Presets */}
+              <div className="space-y-1.5">
+                <label className={THEME.typography.label}>Dimensions & Aspect Ratio:</label>
+                <select
+                  onChange={(e) => handleDimensionsPreset(e.target.value as any)}
+                  className={`${THEME.surface.select} py-1.5 font-medium`}
+                  value={
+                    template.width === 1920 && template.height === 1080
+                      ? "web"
+                      : template.width === 3508 && template.height === 2480
+                      ? "a4-land"
+                      : template.width === 2480 && template.height === 3508
+                      ? "a4-port"
+                      : template.width === 3300 && template.height === 2550
+                      ? "us-letter"
+                      : "web"
+                  }
+                >
+                  <option value="web">🖥️ Web 16:9 Landscape (1920 × 1080 px)</option>
+                  <option value="a4-land">📜 Print A4 Landscape (3508 × 2480 px, 300 DPI)</option>
+                  <option value="a4-port">📄 Print A4 Portrait (2480 × 3508 px, 300 DPI)</option>
+                  <option value="us-letter">🖨️ US Letter Landscape (3300 × 2550 px)</option>
+                </select>
+              </div>
 
-      {/* ========================================================================= */}
-      {/* STEP 3: GENERATION SCOPE & OUTPUT DISPATCH VIEW                           */}
-      {/* ========================================================================= */}
-      {currentStep === 3 && (
-        <div className="space-y-4">
-          <Card padding="md" className="space-y-5">
-            <div className="border-b border-slate-200 dark:border-slate-800 pb-3">
-              <h3 className="text-base font-bold text-slate-900 dark:text-white tracking-tight">
-                Certificate Generation Scope & Dispatch
-              </h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
-                Generate for a single recipient, all rows, or specify custom row numbers (e.g. 20–30, 40–70).
-              </p>
-            </div>
-
-            {/* Mode A: Single Certificate Dispatch */}
-            <div className="p-4 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-3">
-              <div className="flex items-center justify-between">
-                <div>
-                  <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-                    Option A: Single Certificate Generation
-                  </h4>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                    Generate and download high-DPI certificate for the current active student ({activeStudent.name}).
-                  </p>
+              {/* Presets */}
+              <div className="space-y-1.5">
+                <label className={THEME.typography.label}>Or Pick a Curated Preset:</label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {[
+                    { key: "academic", label: "🏛️ Academic" },
+                    { key: "hackathon", label: "🏆 Contest" },
+                    { key: "summit", label: "🌐 Summit" },
+                    { key: "minimal", label: "📐 Swiss" },
+                  ].map((p) => (
+                    <button
+                      key={p.key}
+                      onClick={() => handleApplyPreset(p.key)}
+                      className={`px-2 py-1 rounded-lg border text-left font-semibold cursor-pointer ${
+                        activePreset === p.key
+                          ? "bg-blue-50 text-blue-700 border-blue-400 dark:bg-blue-950/60 dark:text-blue-300 dark:border-blue-800"
+                          : "bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300"
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
                 </div>
-                <div className="flex items-center gap-2">
+              </div>
+
+              <Button
+                variant="primary"
+                size="sm"
+                className="w-full justify-center"
+                rightIcon={<ChevronRight className="w-4 h-4" />}
+                onClick={() => setActiveTab("fields")}
+              >
+                Next: Place Information Fields
+              </Button>
+            </Card>
+          )}
+
+          {/* ===================================================================== */}
+          {/* TAB 3: FIELDS & PLACEMENT ("WHAT TO ADD, WHERE TO ADD, HOW TO ADD")    */}
+          {/* ===================================================================== */}
+          {activeTab === "fields" && (
+            <Card padding="md" className="space-y-4 text-xs">
+              <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+                <span className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-xs flex items-center gap-1.5">
+                  <Type className="w-4 h-4 text-emerald-500" />
+                  <span>Information & Field Placement</span>
+                </span>
+                <span className="text-[11px] text-slate-400">Step 3 of 4</span>
+              </div>
+
+              {/* Information Fields Selector List */}
+              <div className="space-y-1.5">
+                <label className={THEME.typography.label}>
+                  Click to Place / Select Field on Canvas:
+                </label>
+                <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+                  {availableFields.map((field) => {
+                    const isPlaced = template
+                      .getElements()
+                      .some((el) => el.type === "text" && (el as TextElement).text.includes(field.tag));
+
+                    return (
+                      <div
+                        key={field.tag}
+                        onClick={() => handleSelectOrAddField(field.tag, field.label, field.defaultSize)}
+                        className={`p-2 rounded-xl border flex items-center justify-between cursor-pointer transition-colors ${
+                          isPlaced
+                            ? "bg-blue-50/70 text-blue-900 border-blue-300 dark:bg-blue-950/40 dark:text-blue-200 dark:border-blue-800"
+                            : "bg-slate-50 dark:bg-slate-900 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:border-blue-300"
+                        }`}
+                      >
+                        <div>
+                          <div className="font-semibold text-xs flex items-center gap-1.5">
+                            <span>{field.label}</span>
+                            <span className="font-mono text-[10px] text-slate-400">{field.tag}</span>
+                          </div>
+                          <span className="text-[10px] text-slate-400 block">{field.desc}</span>
+                        </div>
+                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded ${
+                          isPlaced
+                            ? "bg-blue-200 dark:bg-blue-800 text-blue-800 dark:text-blue-100"
+                            : "bg-slate-200 dark:bg-slate-800 text-slate-600 dark:text-slate-400"
+                        }`}>
+                          {isPlaced ? "On Canvas" : "+ Add"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Typography / Inspector for Selected Element */}
+              {selectedElement && selectedElement.type === "text" && (
+                <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-900 dark:text-white text-[11px] uppercase tracking-wider">
+                      Edit Selected Layer Styling
+                    </span>
+                    <button
+                      onClick={() => removeElement(selectedElement.id)}
+                      className="text-rose-500 hover:text-rose-600 text-xs p-0.5 cursor-pointer"
+                      title="Delete layer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <div>
+                    <label className={THEME.typography.label}>Google Font Family:</label>
+                    <select
+                      value={(selectedElement as TextElement).fontFamily}
+                      onChange={(e) => updateSelectedElement({ fontFamily: e.target.value })}
+                      className={`${THEME.surface.select} mt-1 font-medium`}
+                    >
+                      {CERTIFICATE_FONT_GROUPS.map((grp) => (
+                        <optgroup key={grp.group} label={grp.group}>
+                          {grp.fonts.map((f) => (
+                            <option key={f.name} value={f.name}>
+                              {f.label}
+                            </option>
+                          ))}
+                        </optgroup>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className={THEME.typography.label}>
+                        Size: {(selectedElement as TextElement).fontSize}px
+                      </label>
+                      <input
+                        type="range"
+                        min={12}
+                        max={140}
+                        value={(selectedElement as TextElement).fontSize}
+                        onChange={(e) => updateSelectedElement({ fontSize: Number(e.target.value) })}
+                        className="w-full mt-1 accent-blue-600"
+                      />
+                    </div>
+                    <div>
+                      <label className={THEME.typography.label}>Weight:</label>
+                      <select
+                        value={(selectedElement as TextElement).fontWeight}
+                        onChange={(e) => updateSelectedElement({ fontWeight: e.target.value })}
+                        className={`${THEME.surface.select} mt-1`}
+                      >
+                        <option value="300">Light (300)</option>
+                        <option value="normal">Regular (400)</option>
+                        <option value="500">Medium (500)</option>
+                        <option value="bold">Bold (700)</option>
+                        <option value="800">Black (800)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className={THEME.typography.label}>Color:</label>
+                      <div className="flex items-center gap-1.5 mt-1">
+                        <input
+                          type="color"
+                          value={(selectedElement as TextElement).color}
+                          onChange={(e) => updateSelectedElement({ color: e.target.value })}
+                          className="w-7 h-7 rounded cursor-pointer bg-transparent border-0 p-0"
+                        />
+                        <input
+                          type="text"
+                          value={(selectedElement as TextElement).color}
+                          onChange={(e) => updateSelectedElement({ color: e.target.value })}
+                          className={`${THEME.surface.input} font-mono text-xs py-1`}
+                        />
+                      </div>
+                    </div>
+                    <div>
+                      <label className={THEME.typography.label}>Align:</label>
+                      <select
+                        value={(selectedElement as TextElement).align}
+                        onChange={(e) => updateSelectedElement({ align: e.target.value })}
+                        className={`${THEME.surface.select} mt-1`}
+                      >
+                        <option value="left">Left</option>
+                        <option value="center">Center</option>
+                        <option value="right">Right</option>
+                      </select>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <Button
+                variant="primary"
+                size="sm"
+                className="w-full justify-center"
+                rightIcon={<ChevronRight className="w-4 h-4" />}
+                onClick={() => setActiveTab("export")}
+              >
+                Next: Export & Dispatch
+              </Button>
+            </Card>
+          )}
+
+          {/* ===================================================================== */}
+          {/* TAB 4: EXPORT & DISPATCH (SINGLE VS BULK DISPATCH)                    */}
+          {/* ===================================================================== */}
+          {activeTab === "export" && (
+            <Card padding="md" className="space-y-4 text-xs">
+              <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+                <span className="font-bold text-slate-900 dark:text-white uppercase tracking-wider text-xs flex items-center gap-1.5">
+                  <Play className="w-4 h-4 text-emerald-500" />
+                  <span>Generate & Export</span>
+                </span>
+                <span className="text-[11px] text-slate-400">Step 4 of 4</span>
+              </div>
+
+              {/* Single Certificate Dispatch */}
+              <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-950/60 border border-slate-200 dark:border-slate-800 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900 dark:text-white">Single Certificate:</span>
+                  <Badge variant="primary">{activeStudent.name}</Badge>
+                </div>
+                <div className="grid grid-cols-2 gap-2 pt-1">
                   <Button
                     variant="secondary"
                     size="sm"
-                    leftIcon={<Download className="w-4 h-4 text-blue-500" />}
+                    className="justify-center"
+                    leftIcon={<Download className="w-3.5 h-3.5" />}
                     onClick={() => handleDownloadSingle("png")}
                   >
                     Download PNG
                   </Button>
                   <Button
-                    variant="primary"
+                    variant="secondary"
                     size="sm"
-                    leftIcon={<Download className="w-4 h-4" />}
+                    className="justify-center"
+                    leftIcon={<Download className="w-3.5 h-3.5" />}
                     onClick={() => handleDownloadSingle("pdf")}
                   >
-                    Download Vector PDF
+                    Download PDF
                   </Button>
                 </div>
               </div>
-            </div>
 
-            {/* Mode B: Bulk Certificate Engine & Scoping */}
-            <div className="p-4 rounded-xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 space-y-4 shadow-2xs">
-              <div>
-                <h4 className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider">
-                  Option B: Bulk Certificate Generation
-                </h4>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400 mt-0.5">
-                  Choose which records to generate: all records, custom row numbers (e.g. 20–30), or filtered groups.
-                </p>
-              </div>
-
-              {/* Scoping Selector Cards */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setGenerationScope("all")}
-                  className={`p-3.5 rounded-xl border text-left cursor-pointer transition-all ${
-                    generationScope === "all"
-                      ? "bg-blue-50/90 dark:bg-blue-950/50 border-blue-500 text-blue-900 dark:text-blue-100 ring-2 ring-blue-500/20 shadow-2xs"
-                      : "bg-slate-50 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-                  }`}
-                >
-                  <div className="flex items-center gap-2 font-bold text-xs mb-1">
-                    <Users className="w-4 h-4 text-blue-600 dark:text-blue-400" />
-                    <span>All Records</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Generate for all {students.length || 1} records in the dataset (Rows 1 to {students.length || 1}).
-                  </p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setGenerationScope("range")}
-                  className={`p-3.5 rounded-xl border text-left cursor-pointer transition-all ${
-                    generationScope === "range"
-                      ? "bg-blue-50/90 dark:bg-blue-950/50 border-blue-500 text-blue-900 dark:text-blue-100 ring-2 ring-blue-500/20 shadow-2xs"
-                      : "bg-slate-50 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-                  }`}
-                >
-                  <div className="flex items-center gap-2 font-bold text-xs mb-1">
-                    <Hash className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                    <span>Custom Row Range</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Specify exact row numbers or ranges (e.g. 20–30, 40–70, 85).
-                  </p>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setGenerationScope("filter")}
-                  className={`p-3.5 rounded-xl border text-left cursor-pointer transition-all ${
-                    generationScope === "filter"
-                      ? "bg-blue-50/90 dark:bg-blue-950/50 border-blue-500 text-blue-900 dark:text-blue-100 ring-2 ring-blue-500/20 shadow-2xs"
-                      : "bg-slate-50 dark:bg-slate-950/60 border-slate-200 dark:border-slate-800 text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800"
-                  }`}
-                >
-                  <div className="flex items-center gap-2 font-bold text-xs mb-1">
-                    <Filter className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
-                    <span>Filter by Team / Dept</span>
-                  </div>
-                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                    Generate only for a chosen contest team or academic department.
-                  </p>
-                </button>
-              </div>
-
-              {/* Custom Row Range Input Box */}
-              {generationScope === "range" && (
-                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 space-y-2 text-xs">
-                  <div className="flex items-center justify-between">
-                    <label className="font-semibold text-slate-700 dark:text-slate-300">
-                      Enter Row Numbers / Ranges (1-indexed based on sheet rows):
-                    </label>
-                    <span className="font-semibold text-blue-600 dark:text-blue-400">
-                      {targetedRecords.length} Rows Matched
-                    </span>
-                  </div>
-                  <input
-                    type="text"
-                    value={customRangeText}
-                    onChange={(e) => setCustomRangeText(e.target.value)}
-                    placeholder="e.g. 20-30, 40-70, 85"
-                    className={`${THEME.surface.input} font-mono`}
-                  />
-                  <div className="flex items-center gap-1.5 flex-wrap pt-1 text-[11px]">
-                    <span className="text-slate-400">Quick ranges:</span>
-                    {[
-                      { label: "First 10 (1-10)", val: "1-10" },
-                      { label: "Rows 11-30", val: "11-30" },
-                      { label: "Rows 20-40", val: "20-40" },
-                      { label: "Last 20 Rows", val: `${Math.max(1, students.length - 19)}-${students.length}` },
-                    ].map((preset) => (
-                      <button
-                        key={preset.label}
-                        type="button"
-                        onClick={() => setCustomRangeText(preset.val)}
-                        className="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-blue-100 dark:hover:bg-blue-900 cursor-pointer"
-                      >
-                        {preset.label}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Filter by Team / Dept Inputs */}
-              {generationScope === "filter" && (
-                <div className="p-3.5 rounded-xl bg-slate-50 dark:bg-slate-950/70 border border-slate-200 dark:border-slate-800 grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                  <div>
-                    <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">
-                      Filter by Contest Team:
-                    </label>
-                    <select
-                      value={filterTeam}
-                      onChange={(e) => setFilterTeam(e.target.value)}
-                      className={THEME.surface.select}
-                    >
-                      <option value="all">All Teams</option>
-                      {distinctTeams.map((t) => (
-                        <option key={t} value={t}>
-                          Team: {t}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-700 dark:text-slate-300 font-semibold mb-1">
-                      Filter by Academic Department:
-                    </label>
-                    <select
-                      value={filterDept}
-                      onChange={(e) => setFilterDept(e.target.value)}
-                      className={THEME.surface.select}
-                    >
-                      <option value="all">All Departments</option>
-                      {distinctDepts.map((d) => (
-                        <option key={d} value={d}>
-                          Dept: {d}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              )}
-
-              {/* Generation Scope Summary Pill Bar */}
-              <div className="flex items-center justify-between p-3.5 rounded-xl bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-800 text-xs">
-                <div className="flex items-center gap-2">
-                  <Check className="w-4 h-4 text-emerald-500" />
-                  <span className="font-semibold text-slate-900 dark:text-white">
-                    Target Ready: {targetedRecords.length} Certificates
+              {/* Bulk Certificate Batch Dispatch */}
+              <div className="p-3 rounded-xl bg-blue-50/70 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 space-y-2.5">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-900 dark:text-white">Bulk Batch Generation:</span>
+                  <span className="font-bold text-blue-600 dark:text-blue-400">
+                    {targetedRecords.length} Ready
                   </span>
-                  <span className="text-slate-500 dark:text-slate-400">
-                    ({Math.round((targetedRecords.length / Math.max(1, students.length)) * 100)}% of dataset)
-                  </span>
+                </div>
+
+                <div className="text-[11px] text-slate-500 dark:text-slate-400 space-y-0.5">
+                  <div>Scope: <span className="font-semibold text-slate-700 dark:text-slate-300 capitalize">{generationScope === "all" ? "All Sheet Rows" : `Rows ${customRangeText}`}</span></div>
+                  <div>Output: <span className="font-semibold text-slate-700 dark:text-slate-300">{exportFormat === "merged-pdf" ? "Merged PDF" : "ZIP Archive"}</span></div>
                 </div>
 
                 <Button
                   variant="success"
                   size="sm"
+                  className="w-full justify-center"
                   leftIcon={<Play className="w-4 h-4" />}
                   onClick={() => setIsGenModalOpen(true)}
                 >
                   Launch Bulk Generator ({targetedRecords.length} Certs)
                 </Button>
               </div>
+            </Card>
+          )}
 
-              {/* Scoped Table Preview */}
-              <div className="space-y-2 pt-1 text-xs">
-                <h5 className="font-bold text-slate-700 dark:text-slate-300 uppercase tracking-wider text-[11px]">
-                  Records in Generation Scope (First 10 Preview):
-                </h5>
-                <div className="max-h-48 overflow-y-auto border border-slate-200 dark:border-slate-800 rounded-xl">
-                  <table className="w-full text-left text-xs">
-                    <thead className="bg-slate-100 dark:bg-slate-900 text-slate-500 sticky top-0">
-                      <tr>
-                        <th className="p-2">Row #</th>
-                        <th className="p-2">Student ID</th>
-                        <th className="p-2">Name</th>
-                        <th className="p-2">Dept</th>
-                        <th className="p-2">Team Name</th>
-                        <th className="p-2">Course Teacher / Advisor</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 dark:divide-slate-800/80">
-                      {targetedRecords.slice(0, 10).map((r, idx) => (
-                        <tr key={r.id || idx} className="hover:bg-slate-50 dark:hover:bg-slate-900/50">
-                          <td className="p-2 font-mono text-slate-400">{idx + 1}</td>
-                          <td className="p-2 font-mono">{r.id}</td>
-                          <td className="p-2 font-semibold text-slate-900 dark:text-white">{r.name}</td>
-                          <td className="p-2">{r.department}</td>
-                          <td className="p-2 font-medium text-amber-600 dark:text-amber-400">
-                            {r["Team Name"] || (r as any).team || "—"}
-                          </td>
-                          <td className="p-2 font-medium text-emerald-600 dark:text-emerald-400">
-                            {r["Course Teacher / Advisor"] || r.advisor || "—"}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-between pt-2 border-t border-slate-200 dark:border-slate-800">
-              <Button variant="secondary" size="sm" onClick={() => setCurrentStep(2)}>
-                ← Back to Step 2: Design
-              </Button>
-            </div>
-          </Card>
         </div>
-      )}
+      </div>
 
       {/* ========================================================================= */}
-      {/* BULK GENERATION PROGRESS MODAL                                            */}
+      {/* BULK GENERATION MODAL                                                     */}
       {/* ========================================================================= */}
       <Modal
         isOpen={isGenModalOpen}
         onClose={() => !isGenerating && setIsGenModalOpen(false)}
         title="1,000+ Bulk Certificate Generation Engine"
-        subtitle="Processes locally in browser memory with zero server timeouts or costs"
+        subtitle="Processes locally in browser memory without server timeouts or costs"
         maxWidth="lg"
         footer={
           <div className="flex items-center justify-between w-full">
