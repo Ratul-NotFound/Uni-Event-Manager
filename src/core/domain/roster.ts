@@ -19,6 +19,10 @@ export interface StudentRecord {
   assignedSeat?: string;
   certificateIssued?: boolean;
   emailSent?: boolean;
+  gateCheckedIn?: boolean;
+  attendanceStatus?: "CHECKED_IN" | "ABSENT";
+  claimedTokens?: string[];
+  checkInTime?: number;
   advisor?: string;
   supervisor?: string;
   extra?: Record<string, string>;

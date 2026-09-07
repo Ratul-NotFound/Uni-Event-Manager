@@ -540,9 +540,113 @@ export default function CampusClubApp() {
 
           {/* Section 2: Event Day Operations */}
           {activeSection === "operations" && (
-            <div>
+            <div className="space-y-6">
+              {/* Event Day Mission Control Command Bar */}
+              <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/50 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 flex items-center gap-1.5 font-bold text-xs">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span>OPS COMMAND CENTER</span>
+                  </div>
+                  <div className="text-xs">
+                    <span className="text-slate-500 dark:text-slate-400">Live Turnout: </span>
+                    <span className="font-bold text-slate-900 dark:text-white font-mono">
+                      {students.filter((s) => s.gateCheckedIn).length} / {students.length || 0}
+                    </span>
+                    <span className="text-emerald-600 dark:text-emerald-400 font-bold ml-1.5">
+                      ({students.length > 0 ? Math.round((students.filter((s) => s.gateCheckedIn).length / students.length) * 100) : 0}%)
+                    </span>
+                  </div>
+                </div>
+
+                {/* Quick Sub-tab Switcher Pills */}
+                <div className="flex items-center gap-1 overflow-x-auto pb-1 sm:pb-0 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => selectOpsTool("scanner")}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                      opsSubTab === "scanner"
+                        ? "bg-blue-600 text-white shadow-2xs"
+                        : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                    }`}
+                  >
+                    Scanner
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => selectOpsTool("badges")}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                      opsSubTab === "badges"
+                        ? "bg-blue-600 text-white shadow-2xs"
+                        : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                    }`}
+                  >
+                    Badges
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => selectOpsTool("volunteers")}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                      opsSubTab === "volunteers"
+                        ? "bg-blue-600 text-white shadow-2xs"
+                        : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                    }`}
+                  >
+                    Volunteers
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => selectOpsTool("stage")}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                      opsSubTab === "stage"
+                        ? "bg-blue-600 text-white shadow-2xs"
+                        : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                    }`}
+                  >
+                    Stage Clock
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => selectOpsTool("judging")}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                      opsSubTab === "judging"
+                        ? "bg-blue-600 text-white shadow-2xs"
+                        : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                    }`}
+                  >
+                    Judging
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => selectOpsTool("brackets")}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                      opsSubTab === "brackets"
+                        ? "bg-blue-600 text-white shadow-2xs"
+                        : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                    }`}
+                  >
+                    Brackets
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => selectOpsTool("whatsapp")}
+                    className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                      opsSubTab === "whatsapp"
+                        ? "bg-blue-600 text-white shadow-2xs"
+                        : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800"
+                    }`}
+                  >
+                    Broadcast
+                  </button>
+                </div>
+              </div>
+
               {opsSubTab === "scanner" && (
-                <MealAndGateScanner students={students} />
+                <MealAndGateScanner
+                  students={students}
+                  onUpdateStudent={handleUpdateSingleStudent}
+                  onRosterSync={handleRosterUpdate}
+                />
               )}
               {opsSubTab === "badges" && (
                 <BadgeGenerator students={students} />
