@@ -40,6 +40,17 @@ export interface A4TilingLayout {
 }
 
 export class IdCardEngine {
+  private static imageCache = new Map<string, HTMLImageElement>();
+  private static qrCache = new Map<string, HTMLImageElement>();
+
+  /**
+   * Clears the in-memory image and QR caches.
+   */
+  public static clearCache(): void {
+    IdCardEngine.imageCache.clear();
+    IdCardEngine.qrCache.clear();
+  }
+
   /**
    * Normalizes a filename or student ID into a sanitized key for matching.
    * Example: "CSE-1024.jpg" -> "cse1024", "ID# 2026_001.png" -> "2026001"
@@ -483,20 +494,27 @@ export class IdCardEngine {
             code.showLabel
           );
         } else {
-          // QR Code
-          try {
-            const qrDataUrl = await QRCode.toDataURL(val, {
-              width: Math.round(Math.min(elW, elH)),
-              margin: 1,
-              color: {
-                dark: code.fgColor || "#0F172A",
-                light: code.bgColor || "#FFFFFF",
-              },
-            });
-            const qrImg = await IdCardEngine.loadImage(qrDataUrl);
+          // QR Code with caching
+          const qrKey = `${val}#${code.fgColor || "#0F172A"}#${code.bgColor || "#FFFFFF"}#${Math.round(Math.min(elW, elH))}`;
+          let qrImg = IdCardEngine.qrCache.get(qrKey);
+          if (!qrImg) {
+            try {
+              const qrDataUrl = await QRCode.toDataURL(val, {
+                width: Math.round(Math.min(elW, elH)),
+                margin: 1,
+                color: {
+                  dark: code.fgColor || "#0F172A",
+                  light: code.bgColor || "#FFFFFF",
+                },
+              });
+              qrImg = await IdCardEngine.loadImage(qrDataUrl);
+              IdCardEngine.qrCache.set(qrKey, qrImg);
+            } catch (err) {
+              console.warn("QR code generation error", err);
+            }
+          }
+          if (qrImg) {
             ctx.drawImage(qrImg, elX, elY, elW, elH);
-          } catch (err) {
-            console.warn("QR code generation error", err);
           }
         }
       } else if (el.type === "image") {
@@ -541,13 +559,21 @@ export class IdCardEngine {
   }
 
   /**
-   * Helper to load an image safely into an HTMLImageElement.
+   * Helper to load an image safely into an HTMLImageElement with in-memory caching.
    */
   public static loadImage(src: string): Promise<HTMLImageElement> {
+    const cached = this.imageCache.get(src);
+    if (cached && cached.complete && cached.naturalWidth > 0) {
+      return Promise.resolve(cached);
+    }
+
     return new Promise((resolve, reject) => {
       const img = new Image();
       img.crossOrigin = "anonymous";
-      img.onload = () => resolve(img);
+      img.onload = () => {
+        this.imageCache.set(src, img);
+        resolve(img);
+      };
       img.onerror = (e) => reject(e);
       img.src = src;
     });

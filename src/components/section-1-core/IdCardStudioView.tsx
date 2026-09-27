@@ -42,6 +42,8 @@ import {
   Layers,
   ChevronLeft,
   ChevronRight,
+  ChevronUp,
+  ChevronDown,
   ZoomIn,
   ZoomOut,
   Maximize2,
@@ -66,6 +68,9 @@ import {
   Eraser,
   RotateCcw,
   CheckCircle2,
+  AlignLeft,
+  AlignCenter,
+  AlignRight,
 } from "lucide-react";
 
 export interface IdCardStudioViewProps {
@@ -156,6 +161,8 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
   const [isResizingElement, setIsResizingElement] = useState(false);
   const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
   const [initialElementPos, setInitialElementPos] = useState({ x: 0, y: 0, width: 0, height: 0 });
+  const justDraggedRef = useRef(false);
+  const hasMovedSignificantlyRef = useRef(false);
 
   // Student Carousel & Photo Map State
   const [previewIndex, setPreviewIndex] = useState<number>(0);
@@ -233,37 +240,41 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
   useEffect(() => {
     let isCancelled = false;
 
-    const renderPreview = async () => {
-      if (!previewCanvasRef.current) return;
-      const studentPhoto = IdCardEngine.getStudentPhoto(currentStudent, photoMap);
+    // Debounce rendering slightly while actively dragging or resizing to ensure 60fps performance
+    const timer = setTimeout(
+      async () => {
+        if (!previewCanvasRef.current) return;
+        const studentPhoto = IdCardEngine.getStudentPhoto(currentStudent, photoMap);
 
-      try {
-        const rendered = await IdCardEngine.renderFaceToCanvas(
-          template,
-          activeSide,
-          currentStudent,
-          studentPhoto
-        );
+        try {
+          const rendered = await IdCardEngine.renderFaceToCanvas(
+            template,
+            activeSide,
+            currentStudent,
+            studentPhoto
+          );
 
-        if (isCancelled) return;
-        const targetCanvas = previewCanvasRef.current;
-        targetCanvas.width = rendered.width;
-        targetCanvas.height = rendered.height;
-        const targetCtx = targetCanvas.getContext("2d");
-        if (targetCtx) {
-          targetCtx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
-          targetCtx.drawImage(rendered, 0, 0);
+          if (isCancelled) return;
+          const targetCanvas = previewCanvasRef.current;
+          targetCanvas.width = rendered.width;
+          targetCanvas.height = rendered.height;
+          const targetCtx = targetCanvas.getContext("2d");
+          if (targetCtx) {
+            targetCtx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+            targetCtx.drawImage(rendered, 0, 0);
+          }
+        } catch (err) {
+          console.warn("Could not render card preview canvas:", err);
         }
-      } catch (err) {
-        console.warn("Could not render card preview canvas:", err);
-      }
-    };
+      },
+      isDraggingElement || isResizingElement ? 35 : 40
+    );
 
-    renderPreview();
     return () => {
       isCancelled = true;
+      clearTimeout(timer);
     };
-  }, [template, activeSide, currentStudent, photoMap]);
+  }, [template, activeSide, currentStudent, photoMap, isDraggingElement, isResizingElement]);
 
   // Handle Preset Selection
   const handleSelectPreset = (presetKey: "cr80_portrait" | "cr80_landscape" | "lanyard_badge") => {
@@ -346,26 +357,33 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
     const newId = `${type}-${Date.now()}`;
     let newEl: IdCardElement;
 
+    const currentBg = activeSide === "front" ? template.frontBackground : template.backBackground;
+    const isLightBg = currentBg?.startsWith("data:") || currentBg === "theme:clean-white";
+
+    // Compute staggered position so newly added elements don't stack directly on top of each other
+    const currentList = activeSide === "front" ? template.frontElements : template.backElements;
+    const offset = (currentList.length % 6) * 5;
+
     if (type === "text") {
       newEl = new IdCardTextElement({
         id: newId,
         x: 10,
-        y: 20,
+        y: Math.min(80, 42 + offset),
         width: 80,
         height: 6,
-        text: "New Text Field",
+        text: "Attendee Field",
         fontSize: 14,
         fontWeight: "bold",
-        color: activeSide === "front" ? "#FFFFFF" : "#0F172A",
+        color: isLightBg ? "#0F172A" : "#FFFFFF",
         align: "center",
       });
     } else if (type === "photo") {
       newEl = new IdCardPhotoElement({
         id: newId,
-        x: 30,
-        y: 20,
-        width: 40,
-        height: 25,
+        x: 28,
+        y: Math.min(60, 18 + offset),
+        width: 44,
+        height: 28,
         shape: "rounded",
         borderRadius: 14,
         borderWidth: 2,
@@ -375,9 +393,9 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
       newEl = new IdCardBarcodeQrElement({
         id: newId,
         x: 20,
-        y: 65,
+        y: Math.min(75, 55 + offset),
         width: 60,
-        height: 18,
+        height: 16,
         codeType: "code128_barcode",
         valuePattern: "{{ID}}",
         fgColor: "#0F172A",
@@ -387,7 +405,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
       newEl = new IdCardShapeElement({
         id: newId,
         x: 10,
-        y: 50,
+        y: Math.min(85, 30 + offset),
         width: 80,
         height: 4,
         shapeType: "pill",
@@ -406,31 +424,39 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
     setSelectedElementId(newId);
   };
 
-  // Delete Selected Element
-  const handleDeleteSelected = () => {
-    if (!selectedElementId) return;
+  // Delete Element (by target ID or selected)
+  const handleDeleteElement = (targetId?: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const idToDelete = targetId || selectedElementId;
+    if (!idToDelete) return;
     setTemplate((prev) => {
       const isFront = activeSide === "front";
       return {
         ...prev,
         frontElements: isFront
-          ? prev.frontElements.filter((el) => el.id !== selectedElementId)
+          ? prev.frontElements.filter((el) => el.id !== idToDelete)
           : prev.frontElements,
         backElements: !isFront
-          ? prev.backElements.filter((el) => el.id !== selectedElementId)
+          ? prev.backElements.filter((el) => el.id !== idToDelete)
           : prev.backElements,
       };
     });
-    setSelectedElementId(null);
+    if (selectedElementId === idToDelete) {
+      setSelectedElementId(null);
+    }
   };
 
+  const handleDeleteSelected = () => handleDeleteElement();
+
   // Reorder Element (Bring forward / send backward)
-  const handleMoveLayer = (direction: "up" | "down") => {
-    if (!selectedElementId) return;
+  const handleMoveLayer = (direction: "up" | "down", targetId?: string, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    const idToMove = targetId || selectedElementId;
+    if (!idToMove) return;
     setTemplate((prev) => {
       const isFront = activeSide === "front";
       const list = isFront ? [...prev.frontElements] : [...prev.backElements];
-      const idx = list.findIndex((el) => el.id === selectedElementId);
+      const idx = list.findIndex((el) => el.id === idToMove);
       if (idx === -1) return prev;
 
       if (direction === "up" && idx < list.length - 1) {
@@ -655,6 +681,8 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
     setSelectedElementId(el.id);
     setIsDraggingElement(true);
     setIsResizingElement(false);
+    hasMovedSignificantlyRef.current = false;
+    justDraggedRef.current = false;
     setDragStartPos({ x: e.clientX, y: e.clientY });
     setInitialElementPos({ x: el.x, y: el.y, width: el.width, height: el.height });
   };
@@ -664,6 +692,8 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
     setSelectedElementId(el.id);
     setIsResizingElement(true);
     setIsDraggingElement(false);
+    hasMovedSignificantlyRef.current = false;
+    justDraggedRef.current = false;
     setDragStartPos({ x: e.clientX, y: e.clientY });
     setInitialElementPos({ x: el.x, y: el.y, width: el.width, height: el.height });
   };
@@ -671,37 +701,92 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
   useEffect(() => {
     if (!isDraggingElement && !isResizingElement) return;
 
+    let rafId: number | null = null;
+
     const handleMouseMove = (e: MouseEvent) => {
-      const cardEl = canvasWrapperRef.current;
-      if (!cardEl || !selectedElementId) return;
+      const dist = Math.hypot(e.clientX - dragStartPos.x, e.clientY - dragStartPos.y);
+      if (dist < 3) return; // Prevent minor jitter from triggering drag jump
 
-      const rect = cardEl.getBoundingClientRect();
-      const deltaXPercent = ((e.clientX - dragStartPos.x) / rect.width) * 100;
-      const deltaYPercent = ((e.clientY - dragStartPos.y) / rect.height) * 100;
+      hasMovedSignificantlyRef.current = true;
+      justDraggedRef.current = true;
 
-      if (isDraggingElement) {
-        const newX = Math.max(0, Math.min(100 - initialElementPos.width, Math.round(initialElementPos.x + deltaXPercent)));
-        const newY = Math.max(0, Math.min(100 - initialElementPos.height, Math.round(initialElementPos.y + deltaYPercent)));
-        updateElement(selectedElementId, { x: newX, y: newY });
-      } else if (isResizingElement) {
-        const newW = Math.max(5, Math.min(100 - initialElementPos.x, Math.round(initialElementPos.width + deltaXPercent)));
-        const newH = Math.max(2, Math.min(100 - initialElementPos.y, Math.round(initialElementPos.height + deltaYPercent)));
-        updateElement(selectedElementId, { width: newW, height: newH });
-      }
+      if (rafId) cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        const cardEl = canvasWrapperRef.current;
+        if (!cardEl || !selectedElementId) return;
+
+        const rect = cardEl.getBoundingClientRect();
+        const deltaXPercent = ((e.clientX - dragStartPos.x) / rect.width) * 100;
+        const deltaYPercent = ((e.clientY - dragStartPos.y) / rect.height) * 100;
+
+        if (isDraggingElement) {
+          const newX = Math.max(0, Math.min(100 - initialElementPos.width, Math.round(initialElementPos.x + deltaXPercent)));
+          const newY = Math.max(0, Math.min(100 - initialElementPos.height, Math.round(initialElementPos.y + deltaYPercent)));
+          updateElement(selectedElementId, { x: newX, y: newY });
+        } else if (isResizingElement) {
+          const newW = Math.max(5, Math.min(100 - initialElementPos.x, Math.round(initialElementPos.width + deltaXPercent)));
+          const newH = Math.max(2, Math.min(100 - initialElementPos.y, Math.round(initialElementPos.height + deltaYPercent)));
+          updateElement(selectedElementId, { width: newW, height: newH });
+        }
+      });
     };
 
     const handleMouseUp = () => {
+      if (rafId) cancelAnimationFrame(rafId);
       setIsDraggingElement(false);
       setIsResizingElement(false);
+
+      if (hasMovedSignificantlyRef.current) {
+        setTimeout(() => {
+          justDraggedRef.current = false;
+        }, 150);
+      } else {
+        justDraggedRef.current = false;
+      }
     };
 
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
     return () => {
+      if (rafId) cancelAnimationFrame(rafId);
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
   }, [isDraggingElement, isResizingElement, dragStartPos, initialElementPos, selectedElementId]);
+
+  // Single preview photo upload for current attendee
+  const handleSinglePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setPhotoMap((prev) => {
+        const next = new Map(prev);
+        next.set(currentStudent.id, dataUrl);
+        next.set(IdCardEngine.normalizePhotoId(currentStudent.id), dataUrl);
+        if (currentStudent.name) {
+          next.set(currentStudent.name.toLowerCase().trim(), dataUrl);
+        }
+        return next;
+      });
+    };
+    reader.readAsDataURL(file);
+  };
+
+  // Remove single custom photo
+  const handleRemoveSinglePhoto = () => {
+    setPhotoMap((prev) => {
+      const next = new Map(prev);
+      next.delete(currentStudent.id);
+      next.delete(IdCardEngine.normalizePhotoId(currentStudent.id));
+      if (currentStudent.name) {
+        next.delete(currentStudent.name.toLowerCase().trim());
+      }
+      return next;
+    });
+  };
 
   // Handle Direct Browser Print
   const handleDirectPrint = async () => {
@@ -1202,7 +1287,13 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
               return (
                 <div
                   ref={canvasWrapperRef}
-                  onClick={() => setSelectedElementId(null)}
+                  onClick={(e) => {
+                    if (justDraggedRef.current) return;
+                    // Only deselect if clicked directly on canvas background, not on an element handle
+                    if (e.target === e.currentTarget || (e.target as HTMLElement).tagName === "CANVAS") {
+                      setSelectedElementId(null);
+                    }
+                  }}
                   className="relative shadow-2xl transition-all duration-300 rounded-2xl overflow-hidden select-none"
                   style={{
                     width: `${displayWidth}px`,
@@ -1221,7 +1312,12 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
                     return (
                       <div
                         key={el.id}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedElementId(el.id);
+                        }}
                         onMouseDown={(e) => handleElementMouseDown(e, el)}
+                        onMouseUp={(e) => e.stopPropagation()}
                         className={`absolute select-none transition-shadow ${
                           isSelected
                             ? "ring-2 ring-blue-500 bg-blue-500/10 rounded-sm z-20 cursor-move"
@@ -1244,6 +1340,11 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
                             </span>
                             <div
                               onMouseDown={(e) => handleResizeMouseDown(e, el)}
+                              onMouseUp={(e) => e.stopPropagation()}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedElementId(el.id);
+                              }}
                               className="absolute -bottom-1.5 -right-1.5 w-3.5 h-3.5 bg-blue-600 border-2 border-white rounded-full shadow-md cursor-se-resize hover:scale-125 transition-transform"
                               title="Drag corner to resize"
                             />
@@ -1351,21 +1452,87 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
                         onChange={(e) => updateElement(selectedElement.id, { text: e.target.value })}
                         className="w-full py-1.5 px-2 mt-0.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs font-mono"
                       />
+                      {/* Quick Insert Variable Chips */}
+                      <div className="mt-1">
+                        <span className="text-[9px] text-slate-400 font-bold uppercase block mb-1">
+                          + Insert Dynamic Variable:
+                        </span>
+                        <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
+                          {availableColumns.slice(0, 10).map((col) => (
+                            <button
+                              key={col}
+                              type="button"
+                              onClick={() => {
+                                const cur = (selectedElement as IdCardTextElement).text;
+                                updateElement(selectedElement.id, { text: `${cur} {{${col}}}`.trim() });
+                              }}
+                              className="px-1.5 py-0.5 rounded bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 text-[10px] font-mono border border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/60 cursor-pointer transition-colors"
+                            >
+                              + {col}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
                     </div>
 
-                    <div>
-                      <label className="text-[10px] text-slate-500 font-bold uppercase">Font Family</label>
-                      <select
-                        value={(selectedElement as IdCardTextElement).fontFamily}
-                        onChange={(e) => updateElement(selectedElement.id, { fontFamily: e.target.value })}
-                        className="w-full py-1 px-2 mt-0.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs"
-                      >
-                        {ID_CARD_FONTS.map((f) => (
-                          <option key={f.name} value={f.name}>
-                            {f.label}
-                          </option>
-                        ))}
-                      </select>
+                    {/* Font Family & Alignment */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] text-slate-500 font-bold uppercase">Font Family</label>
+                        <select
+                          value={(selectedElement as IdCardTextElement).fontFamily}
+                          onChange={(e) => updateElement(selectedElement.id, { fontFamily: e.target.value })}
+                          className="w-full py-1 px-2 mt-0.5 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white text-xs"
+                        >
+                          {ID_CARD_FONTS.map((f) => (
+                            <option key={f.name} value={f.name}>
+                              {f.label}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-slate-500 font-bold uppercase">Alignment</label>
+                        <div className="grid grid-cols-3 gap-1 mt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => updateElement(selectedElement.id, { align: "left" })}
+                            className={`py-1 rounded-lg border text-xs font-semibold cursor-pointer flex items-center justify-center ${
+                              (selectedElement as IdCardTextElement).align === "left"
+                                ? "border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/40"
+                                : "border-slate-200 dark:border-slate-800 text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"
+                            }`}
+                            title="Align Left"
+                          >
+                            <AlignLeft className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateElement(selectedElement.id, { align: "center" })}
+                            className={`py-1 rounded-lg border text-xs font-semibold cursor-pointer flex items-center justify-center ${
+                              !(selectedElement as IdCardTextElement).align ||
+                              (selectedElement as IdCardTextElement).align === "center"
+                                ? "border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/40"
+                                : "border-slate-200 dark:border-slate-800 text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"
+                            }`}
+                            title="Align Center"
+                          >
+                            <AlignCenter className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => updateElement(selectedElement.id, { align: "right" })}
+                            className={`py-1 rounded-lg border text-xs font-semibold cursor-pointer flex items-center justify-center ${
+                              (selectedElement as IdCardTextElement).align === "right"
+                                ? "border-blue-500 bg-blue-50 text-blue-600 dark:bg-blue-950/40"
+                                : "border-slate-200 dark:border-slate-800 text-slate-600 hover:bg-slate-100 dark:hover:bg-slate-800"
+                            }`}
+                            title="Align Right"
+                          >
+                            <AlignRight className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
@@ -1498,6 +1665,40 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
                         />
                       </div>
                     </div>
+
+                    {/* Single Photo Upload for Current Attendee */}
+                    <div className="pt-2 border-t border-slate-200 dark:border-slate-800 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-slate-500 font-bold uppercase">
+                          Test / Preview Photo:
+                        </span>
+                        {photoMap.has(IdCardEngine.normalizePhotoId(currentStudent.id)) && (
+                          <span className="text-[10px] text-emerald-600 font-semibold">• Custom Active</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <label className="flex-1 flex items-center justify-center gap-1.5 p-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 hover:border-blue-500 cursor-pointer text-xs font-semibold text-slate-700 dark:text-slate-300 transition-colors">
+                          <UploadCloud className="w-3.5 h-3.5 text-blue-500" />
+                          <span>Upload Photo</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            onChange={handleSinglePhotoUpload}
+                            className="hidden"
+                          />
+                        </label>
+                        {photoMap.has(IdCardEngine.normalizePhotoId(currentStudent.id)) && (
+                          <button
+                            type="button"
+                            onClick={handleRemoveSinglePhoto}
+                            className="p-1.5 text-rose-500 hover:bg-rose-50 dark:hover:bg-rose-950/40 rounded-xl border border-slate-200 dark:border-slate-800 text-xs cursor-pointer"
+                            title="Remove custom photo and revert to initials monogram avatar"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 )}
 
@@ -1613,6 +1814,109 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
               <div className="py-8 text-center text-slate-400">
                 <Sliders className="w-8 h-8 mx-auto mb-2 opacity-40" />
                 <p className="text-xs">Click any element on the card canvas to customize its typography, colors, and layout.</p>
+              </div>
+            )}
+          </Card>
+
+          {/* Card Layers & Hierarchy Panel */}
+          <Card padding="sm" className="space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
+              <span className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+                <Layers className="w-3.5 h-3.5 text-blue-500" />
+                {activeSide.toUpperCase()} Layers ({activeElements.length})
+              </span>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => addElement("text")}
+                  className="px-2 py-0.5 rounded-lg bg-blue-50 dark:bg-blue-950/40 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 text-[10px] font-semibold hover:bg-blue-100 dark:hover:bg-blue-900/60 cursor-pointer flex items-center gap-1 transition-colors"
+                >
+                  <Plus className="w-3 h-3" /> Text
+                </button>
+                <button
+                  type="button"
+                  onClick={() => addElement("photo")}
+                  className="px-2 py-0.5 rounded-lg bg-emerald-50 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-800 text-[10px] font-semibold hover:bg-emerald-100 dark:hover:bg-emerald-900/60 cursor-pointer flex items-center gap-1 transition-colors"
+                >
+                  <Plus className="w-3 h-3" /> Photo
+                </button>
+              </div>
+            </div>
+
+            {activeElements.length === 0 ? (
+              <div className="py-4 text-center text-slate-400 text-xs">
+                No elements on this card face. Click + Text or + Photo above to add.
+              </div>
+            ) : (
+              <div className="space-y-1.5 max-h-60 overflow-y-auto pr-0.5">
+                {[...activeElements].reverse().map((el, revIdx) => {
+                  const isSelected = el.id === selectedElementId;
+                  const originalIdx = activeElements.length - 1 - revIdx;
+                  return (
+                    <div
+                      key={el.id}
+                      onClick={() => setSelectedElementId(el.id)}
+                      className={`group flex items-center justify-between p-2 rounded-xl border text-xs cursor-pointer transition-all ${
+                        isSelected
+                          ? "border-blue-500 bg-blue-50/80 dark:bg-blue-950/50 text-blue-900 dark:text-blue-200 shadow-2xs font-medium"
+                          : "border-slate-200 dark:border-slate-800 hover:border-slate-300 dark:hover:border-slate-700 bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-300"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0 flex-1">
+                        {el.type === "text" && <Type className="w-3.5 h-3.5 text-blue-500 shrink-0" />}
+                        {el.type === "photo" && <UserCheck className="w-3.5 h-3.5 text-emerald-500 shrink-0" />}
+                        {el.type === "barcode_qr" && <QrCode className="w-3.5 h-3.5 text-purple-500 shrink-0" />}
+                        {el.type === "shape" && <Shapes className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
+                        {el.type === "image" && <ImageIcon className="w-3.5 h-3.5 text-indigo-500 shrink-0" />}
+
+                        <div className="truncate flex-1">
+                          <span className="block truncate text-xs">
+                            {el.type === "text"
+                              ? (el as IdCardTextElement).text || "Text Field"
+                              : el.type === "photo"
+                              ? `Photo Frame (${(el as IdCardPhotoElement).shape || "rounded"})`
+                              : el.type === "barcode_qr"
+                              ? (el as IdCardBarcodeQrElement).codeType === "qr"
+                                ? "QR Code"
+                                : "Barcode (1D)"
+                              : el.type === "shape"
+                              ? `Shape (${(el as IdCardShapeElement).shapeType || "rectangle"})`
+                              : "Custom Image"}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-1 shrink-0 ml-2">
+                        <button
+                          type="button"
+                          disabled={originalIdx === activeElements.length - 1}
+                          onClick={(e) => handleMoveLayer("up", el.id, e)}
+                          className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-20 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer disabled:cursor-not-allowed"
+                          title="Bring Forward (Higher Layer)"
+                        >
+                          <ChevronUp className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          disabled={originalIdx === 0}
+                          onClick={(e) => handleMoveLayer("down", el.id, e)}
+                          className="p-1 rounded-md hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-20 text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 cursor-pointer disabled:cursor-not-allowed"
+                          title="Send Backward (Lower Layer)"
+                        >
+                          <ChevronDown className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={(e) => handleDeleteElement(el.id, e)}
+                          className="p-1 rounded-md hover:bg-rose-50 dark:hover:bg-rose-950/40 text-slate-400 hover:text-rose-500 cursor-pointer"
+                          title="Delete Element"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </Card>
