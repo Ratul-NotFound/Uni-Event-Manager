@@ -100,6 +100,8 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
   // Local roster state synchronized with parent or spreadsheet upload
   const [localStudents, setLocalStudents] = useState<StudentRecord[]>(() => {
     if (students && students.length > 0) return students;
+    const stored = LocalStorageSyncService.loadStudents();
+    if (stored && stored.length > 0) return stored;
     return [];
   });
   const [uploadedRosterName, setUploadedRosterName] = useState<string | null>(() => {
@@ -225,19 +227,24 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
   const availableColumns = useMemo(() => {
     const cols = new Set<string>();
 
-    // 1. Detected headers from uploaded spreadsheet
+    // 1. Core primary columns first
+    ["Name", "ID", "Department", "Team Name", "Role", "Institution", "Blood Group"].forEach((c) =>
+      cols.add(c)
+    );
+
+    // 2. Detected headers from uploaded spreadsheet
     detectedHeaders.forEach((h) => {
       if (h && typeof h === "string" && h.trim()) cols.add(h.trim());
     });
 
-    // 2. Extra dictionary from student record
+    // 3. Extra dictionary from student record
     if (currentStudent?.extra) {
       Object.keys(currentStudent.extra).forEach((k) => {
         if (k && k.trim()) cols.add(k.trim());
       });
     }
 
-    // 3. Custom attributes directly on StudentRecord
+    // 4. Custom attributes directly on StudentRecord
     if (currentStudent) {
       Object.keys(currentStudent).forEach((k) => {
         if (
@@ -259,13 +266,22 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
       });
     }
 
-    // 4. Common standard fallbacks
-    ["Name", "ID", "Department", "Batch", "Section", "Seat", "Room", "Email", "Phone"].forEach((c) =>
+    // 5. Common secondary fallbacks
+    ["Batch", "Section", "Seat", "Room", "Email", "Phone"].forEach((c) =>
       cols.add(c)
     );
 
     return Array.from(cols);
   }, [detectedHeaders, currentStudent]);
+
+  // Resolves the current attendee's real value for a field (for live preview in selector)
+  const getFieldSampleValue = useCallback(
+    (fieldName: string): string => {
+      if (!currentStudent) return "";
+      return resolveIdCardText(`{{${fieldName}}}`, currentStudent);
+    },
+    [currentStudent]
+  );
 
   // Re-render Preview Canvas whenever template, student, or photos change
   useEffect(() => {
@@ -682,33 +698,453 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
     setSelectedElementId("student-name");
   };
 
-  // Insert or append dynamic column tag to selected element or create new text element
-  const handleInsertTag = (col: string) => {
-    const tag = `{{${col}}}`;
-    if (selectedElement && selectedElement.type === "text") {
-      const curText = (selectedElement as IdCardTextElement).text;
-      updateElement(selectedElement.id, { text: `${curText} ${tag}`.trim() });
-    } else {
-      // Add new text element with column tag
-      const newId = `text-${Date.now()}`;
+  // Check if a field tag or alias is currently present on the active card face
+  const isFieldOnCard = useCallback(
+    (fieldName: string): boolean => {
+      const norm = fieldName.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const currentEls = activeSide === "front" ? template.frontElements : template.backElements;
+      return currentEls.some((el) => {
+        if (el.type !== "text") return false;
+        const textNorm = (el as IdCardTextElement).text.toLowerCase().replace(/[^a-z0-9]/g, "");
+        return textNorm.includes(norm);
+      });
+    },
+    [activeSide, template]
+  );
+
+  // Add a dedicated, neatly placed text field element for a dynamic column
+  const handleAddDedicatedField = useCallback(
+    (col: string) => {
+      const tag = `{{${col}}}`;
+      const currentEls = activeSide === "front" ? template.frontElements : template.backElements;
+      const textEls = currentEls.filter((el) => el.type === "text");
+      const lowestY = textEls.reduce((max, el) => Math.max(max, el.y + el.height), 42);
+      const nextY = Math.min(84, Math.max(46, Math.round(lowestY + 2)));
+
+      const newId = `field-${col.toLowerCase().replace(/[^a-z0-9]/g, "")}-${Date.now()}`;
+      const currentBg = activeSide === "front" ? template.frontBackground : template.backBackground;
+      const isLightBg = currentBg?.startsWith("data:") || currentBg === "theme:clean-white";
+
       const newEl = new IdCardTextElement({
         id: newId,
         x: 10,
-        y: 45,
+        y: nextY,
         width: 80,
-        height: 6,
+        height: 5.5,
         text: tag,
-        fontSize: 14,
+        fontSize: 13,
         fontWeight: "bold",
-        color: activeSide === "front" ? (template.frontBackground?.startsWith("data:") ? "#0F172A" : "#FFFFFF") : "#0F172A",
+        color: isLightBg ? "#0F172A" : "#FFFFFF",
         align: "center",
       });
+
       setTemplate((prev) => ({
         ...prev,
         frontElements: activeSide === "front" ? [...prev.frontElements, newEl] : prev.frontElements,
         backElements: activeSide === "back" ? [...prev.backElements, newEl] : prev.backElements,
       }));
       setSelectedElementId(newId);
+    },
+    [activeSide, template]
+  );
+
+  // Append dynamic column tag to selected text element (e.g. for multi-variable lines like "ID: {{ID}} • Team: {{Team}}")
+  const handleAppendTagToSelected = useCallback(
+    (col: string) => {
+      const tag = `{{${col}}}`;
+      if (selectedElement && selectedElement.type === "text") {
+        const curText = (selectedElement as IdCardTextElement).text;
+        updateElement(selectedElement.id, { text: `${curText} ${tag}`.trim() });
+      } else {
+        handleAddDedicatedField(col);
+      }
+    },
+    [selectedElement, updateElement, handleAddDedicatedField]
+  );
+
+  // Toggle field on/off on active face
+  const handleToggleField = useCallback(
+    (fieldName: string) => {
+      const norm = fieldName.toLowerCase().replace(/[^a-z0-9]/g, "");
+      const currentEls = activeSide === "front" ? template.frontElements : template.backElements;
+      const existing = currentEls.find((el) => {
+        if (el.type !== "text") return false;
+        const textNorm = (el as IdCardTextElement).text.toLowerCase().replace(/[^a-z0-9]/g, "");
+        return textNorm.includes(norm);
+      });
+
+      if (existing) {
+        handleDeleteElement(existing.id);
+      } else {
+        handleAddDedicatedField(fieldName);
+      }
+    },
+    [activeSide, template, handleDeleteElement, handleAddDedicatedField]
+  );
+
+  // Quick Preset Layouts: "name_id", "name_id_team", "name_id_dept", "full"
+  const handleQuickPresetFields = useCallback(
+    (preset: "name_id" | "name_id_team" | "name_id_dept" | "full") => {
+      setTemplate((prev) => {
+        const isFront = activeSide === "front";
+        const newFrontElements: IdCardElement[] = [];
+
+        // 1. Institution Header Banner
+        newFrontElements.push(
+          new IdCardShapeElement({
+            id: "header-stripe",
+            x: 0,
+            y: 0,
+            width: 100,
+            height: 12,
+            shapeType: "rectangle",
+            fillColor: "#1E293B",
+          }),
+          new IdCardTextElement({
+            id: "institution-title",
+            x: 5,
+            y: 3.5,
+            width: 90,
+            height: 5,
+            text: "CAMPUS EVENT PASS",
+            fontSize: 13,
+            fontWeight: "900",
+            color: "#FFFFFF",
+            align: "center",
+            letterSpacing: 2,
+            textTransform: "uppercase",
+          }),
+          new IdCardTextElement({
+            id: "institution-subtitle",
+            x: 5,
+            y: 8,
+            width: 90,
+            height: 3,
+            text: "OFFICIAL IDENTITY BADGE",
+            fontSize: 8,
+            fontWeight: "700",
+            color: "#94A3B8",
+            align: "center",
+            letterSpacing: 1.5,
+          }),
+          // 2. Photo Frame
+          new IdCardPhotoElement({
+            id: "student-photo",
+            x: 26,
+            y: 15,
+            width: 48,
+            height: 28,
+            shape: "rounded",
+            borderRadius: 14,
+            borderWidth: 3,
+            borderColor: "#3B82F6",
+            hasShadow: true,
+          })
+        );
+
+        if (preset === "name_id") {
+          // Minimalist: ONLY Name and ID!
+          newFrontElements.push(
+            new IdCardTextElement({
+              id: "field-name",
+              x: 5,
+              y: 48,
+              width: 90,
+              height: 7,
+              text: "{{Name}}",
+              fontSize: 20,
+              fontWeight: "900",
+              color: "#FFFFFF",
+              align: "center",
+              textTransform: "capitalize",
+            }),
+            new IdCardShapeElement({
+              id: "id-pill",
+              x: 20,
+              y: 58,
+              width: 60,
+              height: 6,
+              shapeType: "pill",
+              fillColor: "#0F172A",
+              strokeColor: "#3B82F6",
+              strokeWidth: 1.5,
+              borderRadius: 999,
+            }),
+            new IdCardTextElement({
+              id: "field-id",
+              x: 20,
+              y: 59.5,
+              width: 60,
+              height: 4,
+              text: "ID: {{ID}}",
+              fontSize: 12,
+              fontFamily: "JetBrains Mono",
+              fontWeight: "bold",
+              color: "#38BDF8",
+              align: "center",
+            }),
+            new IdCardBarcodeQrElement({
+              id: "student-qr",
+              x: 35,
+              y: 69,
+              width: 30,
+              height: 18,
+              codeType: "qr",
+              valuePattern: "{{ID}}",
+              fgColor: "#0F172A",
+              bgColor: "#FFFFFF",
+              showLabel: false,
+            })
+          );
+        } else if (preset === "name_id_team") {
+          // Name + ID + Team Name!
+          newFrontElements.push(
+            new IdCardTextElement({
+              id: "field-name",
+              x: 5,
+              y: 46,
+              width: 90,
+              height: 6,
+              text: "{{Name}}",
+              fontSize: 18,
+              fontWeight: "900",
+              color: "#FFFFFF",
+              align: "center",
+              textTransform: "capitalize",
+            }),
+            new IdCardShapeElement({
+              id: "team-badge",
+              x: 15,
+              y: 53.5,
+              width: 70,
+              height: 5,
+              shapeType: "pill",
+              fillColor: "#1E3A8A",
+              strokeColor: "#60A5FA",
+              strokeWidth: 1,
+              borderRadius: 999,
+            }),
+            new IdCardTextElement({
+              id: "field-team",
+              x: 15,
+              y: 54.5,
+              width: 70,
+              height: 3.5,
+              text: "TEAM: {{Team_Name}}",
+              fontSize: 10,
+              fontWeight: "800",
+              color: "#93C5FD",
+              align: "center",
+              letterSpacing: 1,
+            }),
+            new IdCardTextElement({
+              id: "field-id",
+              x: 10,
+              y: 60.5,
+              width: 80,
+              height: 4,
+              text: "ID: {{ID}}",
+              fontSize: 11,
+              fontFamily: "JetBrains Mono",
+              fontWeight: "bold",
+              color: "#F8FAFC",
+              align: "center",
+            }),
+            new IdCardBarcodeQrElement({
+              id: "student-qr",
+              x: 36,
+              y: 68,
+              width: 28,
+              height: 18,
+              codeType: "qr",
+              valuePattern: "{{ID}}",
+              fgColor: "#0F172A",
+              bgColor: "#FFFFFF",
+              showLabel: false,
+            })
+          );
+        } else if (preset === "name_id_dept") {
+          // Name + ID + Department!
+          newFrontElements.push(
+            new IdCardTextElement({
+              id: "field-name",
+              x: 5,
+              y: 46,
+              width: 90,
+              height: 6,
+              text: "{{Name}}",
+              fontSize: 18,
+              fontWeight: "900",
+              color: "#FFFFFF",
+              align: "center",
+              textTransform: "capitalize",
+            }),
+            new IdCardTextElement({
+              id: "field-dept",
+              x: 5,
+              y: 53.5,
+              width: 90,
+              height: 4,
+              text: "{{Department}}",
+              fontSize: 11,
+              fontWeight: "600",
+              color: "#60A5FA",
+              align: "center",
+            }),
+            new IdCardShapeElement({
+              id: "id-pill",
+              x: 25,
+              y: 60,
+              width: 50,
+              height: 5,
+              shapeType: "pill",
+              fillColor: "#0F172A",
+              strokeColor: "#334155",
+              strokeWidth: 1,
+              borderRadius: 999,
+            }),
+            new IdCardTextElement({
+              id: "field-id",
+              x: 25,
+              y: 61,
+              width: 50,
+              height: 3.5,
+              text: "ID: {{ID}}",
+              fontSize: 10,
+              fontFamily: "JetBrains Mono",
+              fontWeight: "bold",
+              color: "#F8FAFC",
+              align: "center",
+            }),
+            new IdCardBarcodeQrElement({
+              id: "student-qr",
+              x: 35,
+              y: 68,
+              width: 30,
+              height: 19,
+              codeType: "qr",
+              valuePattern: "{{ID}}",
+              fgColor: "#0F172A",
+              bgColor: "#FFFFFF",
+              showLabel: false,
+            })
+          );
+        } else {
+          // Full Pass: Name + ID + Team + Department + QR!
+          newFrontElements.push(
+            new IdCardTextElement({
+              id: "field-name",
+              x: 5,
+              y: 45,
+              width: 90,
+              height: 6,
+              text: "{{Name}}",
+              fontSize: 17,
+              fontWeight: "900",
+              color: "#FFFFFF",
+              align: "center",
+              textTransform: "capitalize",
+            }),
+            new IdCardTextElement({
+              id: "field-dept",
+              x: 5,
+              y: 51.5,
+              width: 90,
+              height: 3.5,
+              text: "{{Department}}",
+              fontSize: 10,
+              fontWeight: "600",
+              color: "#94A3B8",
+              align: "center",
+            }),
+            new IdCardShapeElement({
+              id: "team-badge",
+              x: 15,
+              y: 56.5,
+              width: 70,
+              height: 4.5,
+              shapeType: "pill",
+              fillColor: "#1E3A8A",
+              strokeColor: "#60A5FA",
+              strokeWidth: 1,
+              borderRadius: 999,
+            }),
+            new IdCardTextElement({
+              id: "field-team",
+              x: 15,
+              y: 57.3,
+              width: 70,
+              height: 3,
+              text: "TEAM: {{Team_Name}}",
+              fontSize: 9,
+              fontWeight: "800",
+              color: "#93C5FD",
+              align: "center",
+              letterSpacing: 1,
+            }),
+            new IdCardTextElement({
+              id: "field-id",
+              x: 10,
+              y: 63,
+              width: 80,
+              height: 3.5,
+              text: "ID: {{ID}}",
+              fontSize: 10.5,
+              fontFamily: "JetBrains Mono",
+              fontWeight: "bold",
+              color: "#F8FAFC",
+              align: "center",
+            }),
+            new IdCardBarcodeQrElement({
+              id: "student-qr",
+              x: 36,
+              y: 69,
+              width: 28,
+              height: 18,
+              codeType: "qr",
+              valuePattern: "{{ID}}",
+              fgColor: "#0F172A",
+              bgColor: "#FFFFFF",
+              showLabel: false,
+            })
+          );
+        }
+
+        // Validity Footer
+        newFrontElements.push(
+          new IdCardTextElement({
+            id: "validity-text",
+            x: 5,
+            y: 94.5,
+            width: 90,
+            height: 3,
+            text: "OFFICIAL EVENT ACCESS PASS",
+            fontSize: 7,
+            fontFamily: "JetBrains Mono",
+            fontWeight: "bold",
+            color: "#94A3B8",
+            align: "center",
+            letterSpacing: 1,
+          })
+        );
+
+        return {
+          ...prev,
+          frontElements: isFront ? newFrontElements : prev.frontElements,
+          backElements: !isFront ? newFrontElements : prev.backElements,
+        };
+      });
+      setSelectedElementId("field-name");
+    },
+    [activeSide]
+  );
+
+  // Backward compatible handleInsertTag: adds dedicated field if no text element is selected
+  const handleInsertTag = (col: string) => {
+    if (selectedElement && selectedElement.type === "text") {
+      handleAppendTagToSelected(col);
+    } else {
+      handleAddDedicatedField(col);
     }
   };
 
@@ -1201,33 +1637,127 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
             )}
           </Card>
 
-          {/* Dynamic Excel Fields Pill Bar */}
-          <Card padding="sm" className="space-y-2.5">
-            <div className="flex items-center justify-between">
+          {/* Card Data Fields & Multi-Select Sync Control */}
+          <Card padding="sm" className="space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-200 dark:border-slate-800 pb-2">
               <span className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
                 <FileText className="w-3.5 h-3.5 text-blue-500" />
-                Dynamic Fields ({availableColumns.length})
+                Select Card Fields
               </span>
-              <span className="text-[10px] text-slate-500">Click to place/insert</span>
+              <span className="text-[10px] font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-1.5 py-0.5 rounded font-bold">
+                Live Synced
+              </span>
             </div>
 
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              Click a column pill to insert into selected text, or click to add a new dynamic field on the card.
-            </p>
-
-            <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto pr-1">
-              {availableColumns.map((col) => (
+            {/* Quick 1-Click Layout Presets */}
+            <div className="space-y-1.5">
+              <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wide block">
+                Quick Field Layouts:
+              </span>
+              <div className="grid grid-cols-2 gap-1.5 text-[11px]">
                 <button
-                  key={col}
                   type="button"
-                  onClick={() => handleInsertTag(col)}
-                  className="px-2 py-1 rounded-md bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 text-[11px] font-mono hover:bg-blue-100 dark:hover:bg-blue-900/50 hover:border-blue-400 transition-colors cursor-pointer flex items-center gap-1"
-                  title={`Insert {{${col}}} into ID card`}
+                  onClick={() => handleQuickPresetFields("name_id")}
+                  className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 font-semibold transition-colors cursor-pointer text-left"
+                  title="Only ID and Name on card"
                 >
-                  <Plus className="w-3 h-3 shrink-0" />
-                  <span>{col}</span>
+                  ⚡ ID + Name Only
                 </button>
-              ))}
+                <button
+                  type="button"
+                  onClick={() => handleQuickPresetFields("name_id_team")}
+                  className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 font-semibold transition-colors cursor-pointer text-left"
+                  title="Name, ID, and Team Name"
+                >
+                  🏆 Name + ID + Team
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickPresetFields("name_id_dept")}
+                  className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 font-semibold transition-colors cursor-pointer text-left"
+                  title="Name, ID, and Department"
+                >
+                  🎓 Name + ID + Dept
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickPresetFields("full")}
+                  className="px-2 py-1.5 rounded-lg border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 hover:border-blue-500 hover:text-blue-600 dark:hover:text-blue-400 font-semibold transition-colors cursor-pointer text-left"
+                  title="Name, ID, Team, Dept, and QR"
+                >
+                  🌟 Full Pass (All 5)
+                </button>
+              </div>
+            </div>
+
+            {/* Individual Field Inclusion List */}
+            <div className="space-y-1 pt-1 border-t border-slate-200/60 dark:border-slate-800/60">
+              <div className="flex items-center justify-between text-[10px] text-slate-400 font-bold uppercase mb-1">
+                <span>Spreadsheet Columns ({availableColumns.length})</span>
+                <span>Active on Card</span>
+              </div>
+
+              <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                {availableColumns.map((col) => {
+                  const onCard = isFieldOnCard(col);
+                  const sampleVal = getFieldSampleValue(col);
+
+                  return (
+                    <div
+                      key={col}
+                      className={`p-2 rounded-xl border transition-all text-xs ${
+                        onCard
+                          ? "border-blue-300 dark:border-blue-800 bg-blue-50/40 dark:bg-blue-950/20 shadow-2xs"
+                          : "border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/60 hover:border-slate-300"
+                      }`}
+                    >
+                      <div className="flex items-center justify-between gap-1.5">
+                        <label className="flex items-center gap-2 cursor-pointer min-w-0">
+                          <input
+                            type="checkbox"
+                            checked={onCard}
+                            onChange={() => handleToggleField(col)}
+                            className="rounded text-blue-600 cursor-pointer w-3.5 h-3.5 shrink-0"
+                          />
+                          <div className="min-w-0">
+                            <span className="font-semibold text-slate-900 dark:text-white block truncate text-[11px]">
+                              {col}
+                            </span>
+                            {sampleVal ? (
+                              <span className="text-[10px] text-slate-500 dark:text-slate-400 font-mono truncate block max-w-[130px]">
+                                {sampleVal}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 italic block">Empty</span>
+                            )}
+                          </div>
+                        </label>
+
+                        <div className="flex items-center gap-1 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => handleAddDedicatedField(col)}
+                            className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-blue-100 dark:hover:bg-blue-900/40 text-blue-600 dark:text-blue-400 text-[10px] font-medium transition-colors cursor-pointer"
+                            title={`Add separate {{${col}}} box on card`}
+                          >
+                            + Field
+                          </button>
+                          {selectedElement && selectedElement.type === "text" && (
+                            <button
+                              type="button"
+                              onClick={() => handleAppendTagToSelected(col)}
+                              className="px-1.5 py-0.5 rounded bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 text-[10px] font-mono transition-colors cursor-pointer"
+                              title={`Insert {{${col}}} into selected text element`}
+                            >
+                              Insert
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
           </Card>
 

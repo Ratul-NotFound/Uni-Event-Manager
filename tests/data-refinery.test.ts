@@ -255,4 +255,27 @@ describe("DataRefineryEngine", () => {
     expect(assigned[2]["Supervisor"]).toBe("Prof. X");
     expect(assigned[3]["Supervisor"]).toBe("Prof. Y");
   });
+
+  it("should map teamName, role, institution, bloodGroup, and advisor directly from raw row", () => {
+    const rawRow = {
+      "Roll": "2026-CSE-001",
+      "Full Name": "Alice Wonderland",
+      "Team Name": "Code Wizards",
+      "Role": "Team Leader",
+      "Varsity / Institution": "Dhaka Tech University",
+      "Blood Group": "B+",
+      "Advisor / Mentor": "Dr. Alan",
+    };
+
+    const student = DataRefineryEngine.mapRawRowToStudent(rawRow, 0);
+    expect(student.id).toBe("2026-CSE-001");
+    expect(student.name).toBe("Alice Wonderland");
+    expect(student.teamName).toBe("Code Wizards");
+    expect(student.role).toBe("Team Leader");
+    expect(student.institution).toBe("Dhaka Tech University");
+    expect(student.bloodGroup).toBe("B+");
+    expect(student.advisor).toBe("Dr. Alan");
+    // Department should default to empty string, NOT "GENERAL"
+    expect(student.department).toBe("");
+  });
 });

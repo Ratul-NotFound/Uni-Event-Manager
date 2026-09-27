@@ -453,6 +453,11 @@ export class DataRefineryEngine {
     const foodKey = findKey(["food", "meal", "diet", "lunch", "refreshment"]);
     const payStatusKey = findKey(["paymentstatus", "status", "paid"]);
     const payTxKey = findKey(["transaction", "txid", "trxid", "slip", "reference"]);
+    const teamKey = findKey(["teamname", "team", "contestteam", "groupname", "squad", "club"]);
+    const roleKey = findKey(["role", "designation", "position", "category", "rank", "title", "usertype"]);
+    const institutionKey = findKey(["institution", "university", "varsity", "college", "school", "org", "organization", "campus"]);
+    const bloodGroupKey = findKey(["blood", "bloodgroup", "bg", "bloodgrp"]);
+    const advisorKey = findKey(["advisor", "supervisor", "mentor", "teacher", "courseteacher"]);
 
     // Core mapped fields
     const student: StudentRecord = {
@@ -462,7 +467,12 @@ export class DataRefineryEngine {
       name: nameKey && row[nameKey] ? String(row[nameKey]).trim() : `Student ${index + 1}`,
       email: emailKey && row[emailKey] ? String(row[emailKey]).trim() : "",
       phone: phoneKey && row[phoneKey] ? String(row[phoneKey]).trim() : "",
-      department: deptKey && row[deptKey] ? String(row[deptKey]).trim().toUpperCase() : "GENERAL",
+      department: deptKey && row[deptKey] ? String(row[deptKey]).trim().toUpperCase() : "",
+      teamName: teamKey && row[teamKey] ? String(row[teamKey]).trim() : "",
+      role: roleKey && row[roleKey] ? String(row[roleKey]).trim() : "",
+      institution: institutionKey && row[institutionKey] ? String(row[institutionKey]).trim() : "",
+      bloodGroup: bloodGroupKey && row[bloodGroupKey] ? String(row[bloodGroupKey]).trim() : "",
+      advisor: advisorKey && row[advisorKey] ? String(row[advisorKey]).trim() : "",
       batch: batchKey && row[batchKey] ? String(row[batchKey]).trim() : "",
       section: sectionKey && row[sectionKey] ? String(row[sectionKey]).trim() : "",
       tshirtSize: tshirtKey && row[tshirtKey] ? String(row[tshirtKey]).trim().toUpperCase() : "M",

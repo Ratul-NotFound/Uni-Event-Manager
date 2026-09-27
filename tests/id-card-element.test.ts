@@ -116,4 +116,30 @@ describe("ID Card Domain Models & Dimensions", () => {
     const resolved = resolveIdCardText(text, student);
     expect(resolved).toBe("Alexandria Morgan | CSE-1024 | CSE | 54");
   });
+
+  it("resolves domain fields teamName, role, institution, bloodGroup, advisor in resolveIdCardText", () => {
+    const student: StudentRecord = {
+      id: "CSE-1024",
+      name: "Alexandria Morgan",
+      email: "alex@university.edu",
+      department: "Computer Science",
+      teamName: "ByteForce",
+      role: "Lead Strategist",
+      institution: "Dhaka University",
+      bloodGroup: "A+",
+      advisor: "Prof. Ada Lovelace",
+    };
+
+    const text = "{{Name}} ({{Role}}) - {{Team_Name}} | {{Institution}} | Blood: {{Blood_Group}} | Mentor: {{Advisor}}";
+    const resolved = resolveIdCardText(text, student);
+    expect(resolved).toBe("Alexandria Morgan (Lead Strategist) - ByteForce | Dhaka University | Blood: A+ | Mentor: Prof. Ada Lovelace");
+
+    // Test selective variables - e.g. student card with only Name + ID
+    const nameIdOnly = "{{Name}} - {{ID}}";
+    expect(resolveIdCardText(nameIdOnly, student)).toBe("Alexandria Morgan - CSE-1024");
+
+    // Test contest card with Name + ID + Team
+    const nameIdTeam = "{{Name}} | {{ID}} | Team: {{Team}}";
+    expect(resolveIdCardText(nameIdTeam, student)).toBe("Alexandria Morgan | CSE-1024 | Team: ByteForce");
+  });
 });

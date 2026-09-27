@@ -409,6 +409,21 @@ export function resolveIdCardText(text: string, student: StudentRecord): string 
     if (["assignedroom", "room", "venue", "hall"].includes(cleanKey)) {
       return student.assignedRoom || "";
     }
+    if (["team", "teamname", "contestteam", "groupname", "squad", "club"].includes(cleanKey)) {
+      return (student as any).teamName || (student as any).team || (student as any)["Team Name"] || (student.extra as any)?.["Team Name"] || (student.extra as any)?.team || "";
+    }
+    if (["role", "designation", "position", "category", "rank", "title", "usertype"].includes(cleanKey)) {
+      return (student as any).role || (student as any).position || (student as any).designation || (student.extra as any)?.role || (student.extra as any)?.position || "";
+    }
+    if (["institution", "university", "varsity", "college", "school", "org", "organization", "campus"].includes(cleanKey)) {
+      return (student as any).institution || (student as any).university || (student.extra as any)?.institution || (student.extra as any)?.university || "";
+    }
+    if (["blood", "bloodgroup", "bg", "bloodgrp"].includes(cleanKey)) {
+      return (student as any).bloodGroup || (student as any).blood || (student.extra as any)?.bloodGroup || (student.extra as any)?.blood || "";
+    }
+    if (["advisor", "supervisor", "mentor", "teacher", "courseteacher"].includes(cleanKey)) {
+      return (student as any).advisor || (student as any).supervisor || (student as any).mentor || (student.extra as any)?.advisor || "";
+    }
     if (["date"].includes(cleanKey)) {
       return new Date().toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
     }
