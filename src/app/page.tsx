@@ -9,6 +9,7 @@ import { ThemeToggle } from "@/components/common/ThemeToggle";
 // Section 1: Core Event Pipeline Components
 import { DataRefineryView } from "@/components/section-1-core/DataRefineryView";
 import { CertificateStudioView } from "@/components/section-1-core/CertificateStudioView";
+import { IdCardStudioView } from "@/components/section-1-core/IdCardStudioView";
 import { SeatPlanView } from "@/components/section-1-core/SeatPlanView";
 import { BulkEmailView } from "@/components/section-1-core/BulkEmailView";
 
@@ -61,7 +62,7 @@ export default function CampusClubApp() {
 
   // Navigation State
   const [activeSection, setActiveSection] = useState<"pipeline" | "operations" | "admin">("pipeline");
-  const [pipelineSubTab, setPipelineSubTab] = useState<"refinery" | "certificates" | "seatplan" | "email">("refinery");
+  const [pipelineSubTab, setPipelineSubTab] = useState<"refinery" | "certificates" | "idcards" | "seatplan" | "email">("refinery");
   const [opsSubTab, setOpsSubTab] = useState<"scanner" | "badges" | "volunteers" | "stage" | "judging" | "brackets" | "whatsapp">("scanner");
   const [adminSubTab, setAdminSubTab] = useState<"report" | "budget" | "sponsors" | "vault">("report");
 
@@ -106,6 +107,7 @@ export default function CampusClubApp() {
     if (activeSection === "pipeline") {
       if (pipelineSubTab === "refinery") return { section: "Core Pipeline", tool: "Google Form & Excel Refinery" };
       if (pipelineSubTab === "certificates") return { section: "Core Pipeline", tool: "Certificate Studio (1,000+ Gen)" };
+      if (pipelineSubTab === "idcards") return { section: "Core Pipeline", tool: "ID Card & Attendee Pass Studio" };
       if (pipelineSubTab === "seatplan") return { section: "Core Pipeline", tool: "Smart Seat Plan & Hall Engine" };
       if (pipelineSubTab === "email") return { section: "Core Pipeline", tool: "Direct Bulk Email Pipeline" };
     }
@@ -220,6 +222,21 @@ export default function CampusClubApp() {
                   <span>Certificate Studio</span>
                 </div>
                 <span className="text-[10px] text-slate-400">1,000+</span>
+              </button>
+
+              <button
+                onClick={() => selectPipelineTool("idcards")}
+                className={`w-full px-3 py-2 rounded-lg text-left font-medium transition-all flex items-center justify-between cursor-pointer ${
+                  activeSection === "pipeline" && pipelineSubTab === "idcards"
+                    ? "bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 font-bold border-l-2 border-blue-600"
+                    : "text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800/60 hover:text-slate-900 dark:hover:text-slate-200"
+                }`}
+              >
+                <div className="flex items-center gap-2.5">
+                  <IdCard className="w-4 h-4 text-indigo-500" />
+                  <span>ID Card Studio</span>
+                </div>
+                <span className="text-[10px] text-indigo-500 font-bold">New</span>
               </button>
 
               <button
@@ -528,6 +545,9 @@ export default function CampusClubApp() {
               )}
               {pipelineSubTab === "certificates" && (
                 <CertificateStudioView students={students} />
+              )}
+              {pipelineSubTab === "idcards" && (
+                <IdCardStudioView students={students} />
               )}
               {pipelineSubTab === "seatplan" && (
                 <SeatPlanView students={students} />

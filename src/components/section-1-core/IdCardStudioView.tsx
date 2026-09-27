@@ -256,11 +256,11 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students }) 
         const json = el.toJSON();
         const merged = { ...json, ...updates };
 
-        if (el.type === "text") return new IdCardTextElement(merged);
-        if (el.type === "photo") return new IdCardPhotoElement(merged);
-        if (el.type === "barcode_qr") return new IdCardBarcodeQrElement(merged);
-        if (el.type === "image") return new IdCardImageElement(merged);
-        if (el.type === "shape") return new IdCardShapeElement(merged);
+        if (el.type === "text") return new IdCardTextElement(merged as any);
+        if (el.type === "photo") return new IdCardPhotoElement(merged as any);
+        if (el.type === "barcode_qr") return new IdCardBarcodeQrElement(merged as any);
+        if (el.type === "image") return new IdCardImageElement(merged as any);
+        if (el.type === "shape") return new IdCardShapeElement(merged as any);
         return el;
       });
 
