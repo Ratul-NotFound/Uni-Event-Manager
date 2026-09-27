@@ -212,6 +212,18 @@ export default function StudentKioskPage() {
             </div>
           )}
         </Card>
+
+        <footer className="text-center text-xs text-slate-500 dark:text-slate-400 pt-2 flex items-center justify-center gap-1.5 font-medium">
+          <span>Made with ❤️ by</span>
+          <a
+            href="https://ratul-dev.vercel.app/"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 underline underline-offset-2 transition-colors"
+          >
+            Ratul
+          </a>
+        </footer>
       </div>
     </div>
   );

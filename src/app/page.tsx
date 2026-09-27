@@ -504,6 +504,19 @@ export default function CampusClubApp() {
             <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium">Theme Mode</span>
             <ThemeToggle />
           </div>
+
+          <div className="pt-2 border-t border-slate-200/60 dark:border-slate-800/60 flex items-center justify-between text-[11px] text-slate-400 dark:text-slate-500">
+            <span>Created by</span>
+            <a
+              href="https://ratul-dev.vercel.app/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 dark:text-blue-400 font-semibold hover:underline flex items-center gap-1"
+            >
+              Ratul
+              <ExternalLink className="w-2.5 h-2.5" />
+            </a>
+          </div>
         </div>
       </aside>
 
@@ -769,16 +782,27 @@ export default function CampusClubApp() {
 
         {/* Professional Footer */}
         <footer className="w-full border-t border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900/50 py-4 px-6 text-center text-xs text-slate-500 dark:text-slate-400 transition-colors">
-          <div className="flex flex-wrap items-center justify-center gap-2 mb-0.5">
+          <div className="flex flex-wrap items-center justify-center gap-2 mb-1">
             <span className="font-semibold text-slate-900 dark:text-white">CampusClub Suite</span>
             <span>•</span>
             <span>Zero-Cost University Operations Engine</span>
             <span>•</span>
             <span className="text-emerald-600 dark:text-emerald-400 font-semibold">$0.00 Serverless Vercel Architecture</span>
           </div>
-          <p className="text-[11px] text-slate-400 dark:text-slate-500">
+          <p className="text-[11px] text-slate-400 dark:text-slate-500 mb-2">
             All data processing, high-volume PDF & ZIP rendering, and seating allocation execute in local browser memory.
           </p>
+          <div className="text-xs text-slate-600 dark:text-slate-400 flex items-center justify-center gap-1.5 font-medium">
+            <span>Made with ❤️ by</span>
+            <a
+              href="https://ratul-dev.vercel.app/"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="font-bold text-blue-600 dark:text-blue-400 hover:text-blue-700 dark:hover:text-blue-300 underline underline-offset-2 transition-colors"
+            >
+              Ratul
+            </a>
+          </div>
         </footer>
       </div>
     </div>
