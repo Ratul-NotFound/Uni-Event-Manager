@@ -547,7 +547,7 @@ export default function CampusClubApp() {
                 <CertificateStudioView students={students} />
               )}
               {pipelineSubTab === "idcards" && (
-                <IdCardStudioView students={students} />
+                <IdCardStudioView students={students} onRosterUpdate={handleRosterUpdate} />
               )}
               {pipelineSubTab === "seatplan" && (
                 <SeatPlanView students={students} />

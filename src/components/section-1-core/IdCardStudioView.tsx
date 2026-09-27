@@ -2,8 +2,11 @@
 
 import React, { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import saveAs from "file-saver";
+import * as XLSX from "xlsx";
+import Papa from "papaparse";
 import { THEME } from "@/styles/theme";
 import { StudentRecord } from "@/core/domain/roster";
+import { DataRefineryEngine } from "@/core/engines/data-refinery";
 import {
   IdCardTemplate,
   IdCardElement,
@@ -59,10 +62,15 @@ import {
   UserCheck,
   AlertCircle,
   SplitSquareVertical,
+  FileSpreadsheet,
+  Eraser,
+  RotateCcw,
+  CheckCircle2,
 } from "lucide-react";
 
 export interface IdCardStudioViewProps {
   students: StudentRecord[];
+  onRosterUpdate?: (records: StudentRecord[]) => void;
 }
 
 export const ID_CARD_FONTS = [
@@ -77,11 +85,25 @@ export const ID_CARD_FONTS = [
   { name: "Roboto", label: "Roboto (Universal Standard)" },
 ];
 
-export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students }) => {
-  // Safe sample student fallback if roster is empty
-  const activeAttendees = useMemo(() => {
+export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, onRosterUpdate }) => {
+  // Local roster state synchronized with parent or spreadsheet upload
+  const [localStudents, setLocalStudents] = useState<StudentRecord[]>(() => {
     if (students && students.length > 0) return students;
-    return [
+    return [];
+  });
+  const [uploadedRosterName, setUploadedRosterName] = useState<string | null>(null);
+  const [detectedHeaders, setDetectedHeaders] = useState<string[]>([]);
+
+  // Sync when parent students prop changes
+  useEffect(() => {
+    if (students && students.length > 0) {
+      setLocalStudents(students);
+    }
+  }, [students]);
+
+  // Safe sample student fallback if roster is empty
+  const sampleAttendees: StudentRecord[] = useMemo(
+    () => [
       {
         id: "CSE-1024",
         name: "Alexandria Morgan",
@@ -95,6 +117,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students }) 
           team: "Cyber Vanguard",
           university: "Metropolitan University",
           bloodGroup: "O+",
+          role: "Team Captain",
         },
       },
       {
@@ -110,16 +133,29 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students }) 
           team: "Marketing Mavericks",
           university: "Metropolitan University",
           bloodGroup: "B+",
+          role: "Speaker",
         },
       },
-    ];
-  }, [students]);
+    ],
+    []
+  );
+
+  const activeAttendees = useMemo(() => {
+    if (localStudents && localStudents.length > 0) return localStudents;
+    return sampleAttendees;
+  }, [localStudents, sampleAttendees]);
 
   // Core Template State
   const [template, setTemplate] = useState<IdCardTemplate>(() => createDefaultIdCardTemplate());
   const [activeSide, setActiveSide] = useState<"front" | "back">("front");
   const [selectedElementId, setSelectedElementId] = useState<string | null>("student-name");
   const [zoomLevel, setZoomLevel] = useState<number>(100);
+
+  // Dragging & Resizing State on Canvas
+  const [isDraggingElement, setIsDraggingElement] = useState(false);
+  const [isResizingElement, setIsResizingElement] = useState(false);
+  const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
+  const [initialElementPos, setInitialElementPos] = useState({ x: 0, y: 0, width: 0, height: 0 });
 
   // Student Carousel & Photo Map State
   const [previewIndex, setPreviewIndex] = useState<number>(0);
@@ -134,9 +170,12 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students }) 
   const [isGenerating, setIsGenerating] = useState(false);
   const [generationProgress, setGenerationProgress] = useState<IdCardGenerationProgress | null>(null);
 
-  // Canvas Reference
+  // Element and File References
   const previewCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
+  const canvasWrapperRef = useRef<HTMLDivElement | null>(null);
+  const rosterInputRef = useRef<HTMLInputElement | null>(null);
+  const bgInputRef = useRef<HTMLInputElement | null>(null);
 
   const currentStudent: StudentRecord = activeAttendees[previewIndex] || activeAttendees[0];
 
@@ -144,20 +183,51 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students }) 
   const activeElements = activeSide === "front" ? template.frontElements : template.backElements;
   const selectedElement = activeElements.find((el) => el.id === selectedElementId) || null;
 
-  // Auto-detect dynamic Excel columns from first student record
+  // Auto-detect dynamic Excel columns from uploaded headers and student record
   const availableColumns = useMemo(() => {
-    const cols = new Set<string>(["Name", "ID", "Department", "Batch", "Section", "Email", "Phone", "Seat", "Room"]);
-    if (currentStudent.extra) {
-      Object.keys(currentStudent.extra).forEach((k) => cols.add(k));
-    }
-    // Also scan custom properties on record
-    Object.keys(currentStudent).forEach((k) => {
-      if (!["id", "name", "email", "department", "batch", "section", "phone", "assignedSeat", "assignedRoom", "extra"].includes(k)) {
-        cols.add(k);
-      }
+    const cols = new Set<string>();
+
+    // 1. Detected headers from uploaded spreadsheet
+    detectedHeaders.forEach((h) => {
+      if (h && typeof h === "string" && h.trim()) cols.add(h.trim());
     });
+
+    // 2. Extra dictionary from student record
+    if (currentStudent?.extra) {
+      Object.keys(currentStudent.extra).forEach((k) => {
+        if (k && k.trim()) cols.add(k.trim());
+      });
+    }
+
+    // 3. Custom attributes directly on StudentRecord
+    if (currentStudent) {
+      Object.keys(currentStudent).forEach((k) => {
+        if (
+          ![
+            "assignedRoom",
+            "assignedRow",
+            "assignedSeat",
+            "attendanceStatus",
+            "certificateIssued",
+            "claimedTokens",
+            "checkInTime",
+            "emailSent",
+            "gateCheckedIn",
+            "extra",
+          ].includes(k)
+        ) {
+          cols.add(k);
+        }
+      });
+    }
+
+    // 4. Common standard fallbacks
+    ["Name", "ID", "Department", "Batch", "Section", "Seat", "Room", "Email", "Phone"].forEach((c) =>
+      cols.add(c)
+    );
+
     return Array.from(cols);
-  }, [currentStudent]);
+  }, [detectedHeaders, currentStudent]);
 
   // Re-render Preview Canvas whenever template, student, or photos change
   useEffect(() => {
@@ -381,6 +451,78 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students }) 
     });
   };
 
+  // Handle Excel / CSV Roster Upload
+  const handleRosterUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadedRosterName(file.name);
+    const fileName = file.name.toLowerCase();
+
+    if (fileName.endsWith(".csv")) {
+      Papa.parse(file, {
+        header: true,
+        skipEmptyLines: true,
+        complete: (results) => {
+          const rawRows = results.data as Record<string, any>[];
+          if (rawRows.length > 0) {
+            const detected = DataRefineryEngine.extractHeaders(rawRows);
+            const headers = detected.length > 0 ? detected : Object.keys(rawRows[0] || {});
+            setDetectedHeaders(headers);
+
+            const mapped = rawRows.map((row: any, i: number) =>
+              DataRefineryEngine.mapRawRowToStudent(row, i)
+            );
+            setLocalStudents(mapped);
+            setPreviewIndex(0);
+            onRosterUpdate?.(mapped);
+          }
+        },
+      });
+    } else {
+      const reader = new FileReader();
+      reader.onload = (evt) => {
+        const bstr = evt.target?.result;
+        const wb = XLSX.read(bstr, { type: "binary" });
+        const wsname = wb.SheetNames[0];
+        const ws = wb.Sheets[wsname];
+        const rawRows = XLSX.utils.sheet_to_json<Record<string, any>>(ws);
+
+        if (rawRows.length > 0) {
+          const detected = DataRefineryEngine.extractHeaders(rawRows);
+          const headers = detected.length > 0 ? detected : Object.keys(rawRows[0] || {});
+          setDetectedHeaders(headers);
+
+          const mapped = rawRows.map((row: any, i: number) =>
+            DataRefineryEngine.mapRawRowToStudent(row, i)
+          );
+          setLocalStudents(mapped);
+          setPreviewIndex(0);
+          onRosterUpdate?.(mapped);
+        }
+      };
+      reader.readAsBinaryString(file);
+    }
+  };
+
+  // Reset to Demo Sample Roster
+  const handleLoadSampleRoster = () => {
+    setLocalStudents(sampleAttendees);
+    setUploadedRosterName(null);
+    setDetectedHeaders([]);
+    setPreviewIndex(0);
+    onRosterUpdate?.(sampleAttendees);
+  };
+
+  // Clear Roster
+  const handleClearRoster = () => {
+    setLocalStudents([]);
+    setUploadedRosterName(null);
+    setDetectedHeaders([]);
+    setPreviewIndex(0);
+    onRosterUpdate?.([]);
+  };
+
   // Handle Photo ZIP Upload
   const handleZipUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -399,7 +541,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students }) 
     }
   };
 
-  // Handle Background Upload
+  // Handle Background Upload with Auto-Fitting Dimensions
   const handleBackgroundUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -407,14 +549,159 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students }) 
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result as string;
-      setTemplate((prev) => ({
-        ...prev,
-        frontBackground: activeSide === "front" ? dataUrl : prev.frontBackground,
-        backBackground: activeSide === "back" ? dataUrl : prev.backBackground,
-      }));
+      const img = new Image();
+      img.onload = () => {
+        const aspect = (img.naturalWidth || 638) / (img.naturalHeight || 1011);
+        let wMm = 54;
+        let hMm = 85.6;
+
+        if (aspect > 1) {
+          // Landscape card
+          wMm = 85.6;
+          hMm = Math.round((85.6 / aspect) * 10) / 10;
+        } else {
+          // Portrait card
+          hMm = 85.6;
+          wMm = Math.round((85.6 * aspect) * 10) / 10;
+        }
+
+        const customDim: CardDimensions = {
+          presetName: "custom",
+          name: `Uploaded Template (${img.naturalWidth}×${img.naturalHeight})`,
+          widthMm: wMm,
+          heightMm: hMm,
+          aspectRatio: aspect,
+          canvasWidth: img.naturalWidth || Math.round(wMm * 11.81),
+          canvasHeight: img.naturalHeight || Math.round(hMm * 11.81),
+        };
+
+        setTemplate((prev) => ({
+          ...prev,
+          dimensions: customDim,
+          frontBackground: activeSide === "front" ? dataUrl : prev.frontBackground,
+          backBackground: activeSide === "back" ? dataUrl : prev.backBackground,
+        }));
+      };
+      img.src = dataUrl;
     };
     reader.readAsDataURL(file);
   };
+
+  // Clear starter shapes (e.g. solid header/footer bars) so uploaded template is clean
+  const handleClearStarterShapes = () => {
+    setTemplate((prev) => {
+      const isFront = activeSide === "front";
+      const filterElements = (els: IdCardElement[]) => els.filter((el) => el.type !== "shape");
+      return {
+        ...prev,
+        frontElements: isFront ? filterElements(prev.frontElements) : prev.frontElements,
+        backElements: !isFront ? filterElements(prev.backElements) : prev.backElements,
+      };
+    });
+  };
+
+  // Clear all elements (blank canvas)
+  const handleClearAllElements = () => {
+    setTemplate((prev) => {
+      const isFront = activeSide === "front";
+      return {
+        ...prev,
+        frontElements: isFront ? [] : prev.frontElements,
+        backElements: !isFront ? [] : prev.backElements,
+      };
+    });
+    setSelectedElementId(null);
+  };
+
+  // Reset to default university template
+  const handleResetStarterTemplate = () => {
+    setTemplate(createDefaultIdCardTemplate());
+    setSelectedElementId("student-name");
+  };
+
+  // Insert or append dynamic column tag to selected element or create new text element
+  const handleInsertTag = (col: string) => {
+    const tag = `{{${col}}}`;
+    if (selectedElement && selectedElement.type === "text") {
+      const curText = (selectedElement as IdCardTextElement).text;
+      updateElement(selectedElement.id, { text: `${curText} ${tag}`.trim() });
+    } else {
+      // Add new text element with column tag
+      const newId = `text-${Date.now()}`;
+      const newEl = new IdCardTextElement({
+        id: newId,
+        x: 10,
+        y: 45,
+        width: 80,
+        height: 6,
+        text: tag,
+        fontSize: 14,
+        fontWeight: "bold",
+        color: activeSide === "front" ? (template.frontBackground?.startsWith("data:") ? "#0F172A" : "#FFFFFF") : "#0F172A",
+        align: "center",
+      });
+      setTemplate((prev) => ({
+        ...prev,
+        frontElements: activeSide === "front" ? [...prev.frontElements, newEl] : prev.frontElements,
+        backElements: activeSide === "back" ? [...prev.backElements, newEl] : prev.backElements,
+      }));
+      setSelectedElementId(newId);
+    }
+  };
+
+  // Canvas Mouse Drag & Resize Handlers
+  const handleElementMouseDown = (e: React.MouseEvent, el: IdCardElement) => {
+    e.stopPropagation();
+    setSelectedElementId(el.id);
+    setIsDraggingElement(true);
+    setIsResizingElement(false);
+    setDragStartPos({ x: e.clientX, y: e.clientY });
+    setInitialElementPos({ x: el.x, y: el.y, width: el.width, height: el.height });
+  };
+
+  const handleResizeMouseDown = (e: React.MouseEvent, el: IdCardElement) => {
+    e.stopPropagation();
+    setSelectedElementId(el.id);
+    setIsResizingElement(true);
+    setIsDraggingElement(false);
+    setDragStartPos({ x: e.clientX, y: e.clientY });
+    setInitialElementPos({ x: el.x, y: el.y, width: el.width, height: el.height });
+  };
+
+  useEffect(() => {
+    if (!isDraggingElement && !isResizingElement) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      const cardEl = canvasWrapperRef.current;
+      if (!cardEl || !selectedElementId) return;
+
+      const rect = cardEl.getBoundingClientRect();
+      const deltaXPercent = ((e.clientX - dragStartPos.x) / rect.width) * 100;
+      const deltaYPercent = ((e.clientY - dragStartPos.y) / rect.height) * 100;
+
+      if (isDraggingElement) {
+        const newX = Math.max(0, Math.min(100 - initialElementPos.width, Math.round(initialElementPos.x + deltaXPercent)));
+        const newY = Math.max(0, Math.min(100 - initialElementPos.height, Math.round(initialElementPos.y + deltaYPercent)));
+        updateElement(selectedElementId, { x: newX, y: newY });
+      } else if (isResizingElement) {
+        const newW = Math.max(5, Math.min(100 - initialElementPos.x, Math.round(initialElementPos.width + deltaXPercent)));
+        const newH = Math.max(2, Math.min(100 - initialElementPos.y, Math.round(initialElementPos.height + deltaYPercent)));
+        updateElement(selectedElementId, { width: newW, height: newH });
+      }
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingElement(false);
+      setIsResizingElement(false);
+    };
+
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDraggingElement, isResizingElement, dragStartPos, initialElementPos, selectedElementId]);
 
   // Handle Direct Browser Print
   const handleDirectPrint = async () => {
@@ -709,55 +996,96 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students }) 
             </div>
           </Card>
 
+          {/* Attendee Roster (Excel / CSV) Uploader */}
+          <Card padding="sm" className="space-y-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+                <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-500" />
+                Attendee Roster
+              </span>
+              {uploadedRosterName ? (
+                <span className="text-[10px] font-mono font-bold text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/60 px-2 py-0.5 rounded-full border border-emerald-200 dark:border-emerald-800">
+                  {localStudents.length} Loaded
+                </span>
+              ) : (
+                <span className="text-[10px] text-slate-400 font-mono">
+                  {localStudents.length > 0 ? `${localStudents.length} Attendees` : "Demo Mode"}
+                </span>
+              )}
+            </div>
+
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              Upload an Excel (.xlsx, .xls) or CSV sheet. All column headers are dynamically extracted.
+            </p>
+
+            <label className="flex items-center justify-center gap-2 p-2.5 rounded-xl border-2 border-dashed border-slate-300 dark:border-slate-700 hover:border-emerald-500 bg-slate-50 dark:bg-slate-900 cursor-pointer transition-colors text-center text-xs font-semibold text-slate-700 dark:text-slate-300">
+              <UploadCloud className="w-4 h-4 text-emerald-500" />
+              <span>{uploadedRosterName ? "Replace Excel / CSV" : "Upload Excel / CSV Roster"}</span>
+              <input
+                ref={rosterInputRef}
+                type="file"
+                accept=".xlsx,.xls,.csv"
+                onChange={handleRosterUpload}
+                className="hidden"
+              />
+            </label>
+
+            {uploadedRosterName && (
+              <div className="flex items-center justify-between p-2 rounded-lg bg-emerald-50/70 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/40 text-[11px]">
+                <div className="flex items-center gap-1.5 min-w-0">
+                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500 shrink-0" />
+                  <span className="font-semibold text-emerald-800 dark:text-emerald-300 truncate">
+                    {uploadedRosterName}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleClearRoster}
+                  className="text-slate-400 hover:text-rose-500 ml-2 font-bold cursor-pointer text-[10px]"
+                  title="Clear Roster"
+                >
+                  Clear
+                </button>
+              </div>
+            )}
+
+            {!uploadedRosterName && localStudents.length === 0 && (
+              <button
+                type="button"
+                onClick={handleLoadSampleRoster}
+                className="w-full py-1 text-[11px] text-blue-600 dark:text-blue-400 hover:underline cursor-pointer flex items-center justify-center gap-1"
+              >
+                <RotateCcw className="w-3 h-3" />
+                Load Demo Sample Roster
+              </button>
+            )}
+          </Card>
+
           {/* Dynamic Excel Fields Pill Bar */}
           <Card padding="sm" className="space-y-2.5">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
                 <FileText className="w-3.5 h-3.5 text-blue-500" />
-                Excel Columns ({availableColumns.length})
+                Dynamic Fields ({availableColumns.length})
               </span>
-              <span className="text-[10px] text-slate-500">Click to insert</span>
+              <span className="text-[10px] text-slate-500">Click to place/insert</span>
             </div>
 
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              Select any text element and click a column tag to dynamically insert attendee data.
+              Click a column pill to insert into selected text, or click to add a new dynamic field on the card.
             </p>
 
-            <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
+            <div className="flex flex-wrap gap-1.5 max-h-40 overflow-y-auto pr-1">
               {availableColumns.map((col) => (
                 <button
                   key={col}
                   type="button"
-                  onClick={() => {
-                    if (selectedElement && selectedElement.type === "text") {
-                      const curText = (selectedElement as IdCardTextElement).text;
-                      updateElement(selectedElement.id, { text: `${curText} {{${col}}}` });
-                    } else {
-                      // Add new text element with column tag
-                      const newId = `text-${Date.now()}`;
-                      const newEl = new IdCardTextElement({
-                        id: newId,
-                        x: 10,
-                        y: 40,
-                        width: 80,
-                        height: 5,
-                        text: `{{${col}}}`,
-                        fontSize: 12,
-                        fontWeight: "bold",
-                        color: activeSide === "front" ? "#FFFFFF" : "#0F172A",
-                        align: "center",
-                      });
-                      setTemplate((prev) => ({
-                        ...prev,
-                        frontElements: activeSide === "front" ? [...prev.frontElements, newEl] : prev.frontElements,
-                        backElements: activeSide === "back" ? [...prev.backElements, newEl] : prev.backElements,
-                      }));
-                      setSelectedElementId(newId);
-                    }
-                  }}
-                  className="px-2 py-0.5 rounded-md bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 text-[11px] font-mono hover:bg-blue-100 dark:hover:bg-blue-900/50 transition-colors cursor-pointer"
+                  onClick={() => handleInsertTag(col)}
+                  className="px-2 py-1 rounded-md bg-blue-50 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400 border border-blue-200 dark:border-blue-800 text-[11px] font-mono hover:bg-blue-100 dark:hover:bg-blue-900/50 hover:border-blue-400 transition-colors cursor-pointer flex items-center gap-1"
+                  title={`Insert {{${col}}} into ID card`}
                 >
-                  +{col}
+                  <Plus className="w-3 h-3 shrink-0" />
+                  <span>{col}</span>
                 </button>
               ))}
             </div>
@@ -805,7 +1133,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students }) 
         <div className="lg:col-span-6 flex flex-col items-center space-y-4">
           {/* Top Canvas Controls Bar */}
           <div className="w-full flex items-center justify-between bg-slate-50 dark:bg-slate-900 p-2 rounded-2xl border border-slate-200 dark:border-slate-800 text-xs">
-            {/* Flip Face Button */}
+            {/* Flip Face Button & Quick Clean Button */}
             <div className="flex items-center gap-2">
               {template.sidedness === "dual" ? (
                 <button
@@ -818,12 +1146,21 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students }) 
                 </button>
               ) : (
                 <span className="font-bold text-slate-600 dark:text-slate-400 uppercase tracking-wider text-[11px]">
-                  Single-Sided (Front Face)
+                  Single-Sided (Front)
                 </span>
               )}
               <Badge variant={activeSide === "front" ? "primary" : "neutral"}>
-                Showing: {activeSide.toUpperCase()}
+                {activeSide.toUpperCase()}
               </Badge>
+              <button
+                type="button"
+                onClick={handleClearStarterShapes}
+                className="hidden sm:flex items-center gap-1 px-2.5 py-1.5 rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-800 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 font-medium transition-all cursor-pointer text-[11px]"
+                title="Removes starter header/footer bars so your custom background artwork is clear"
+              >
+                <Eraser className="w-3 h-3 text-blue-500" />
+                Clear Starter Shapes
+              </button>
             </div>
 
             {/* Zoom Controls */}
@@ -854,49 +1191,70 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students }) 
             className="w-full min-h-[500px] flex items-center justify-center p-6 bg-slate-200/60 dark:bg-slate-950/80 rounded-3xl border border-slate-300 dark:border-slate-800 relative overflow-hidden"
           >
             {/* Real Rendered Canvas at accurate aspect ratio */}
-            <div
-              className="relative shadow-2xl transition-all duration-300 rounded-2xl overflow-hidden select-none"
-              style={{
-                width: `${Math.round((template.dimensions.canvasWidth / 2.2) * (zoomLevel / 100))}px`,
-                height: `${Math.round((template.dimensions.canvasHeight / 2.2) * (zoomLevel / 100))}px`,
-              }}
-            >
-              {/* HTML5 Canvas */}
-              <canvas
-                ref={previewCanvasRef}
-                className="w-full h-full block rounded-2xl cursor-crosshair"
-              />
+            {(() => {
+              const isLandscape = (template.dimensions?.aspectRatio || 1) > 1;
+              const baseDisplayWidth = isLandscape ? 460 : 320;
+              const displayWidth = Math.round(baseDisplayWidth * (zoomLevel / 100));
+              const displayHeight = Math.round(
+                (baseDisplayWidth / (template.dimensions.aspectRatio || (54 / 85.6))) * (zoomLevel / 100)
+              );
 
-              {/* Interactive DOM Selection Handles overlay */}
-              {activeElements.map((el) => {
-                const isSelected = el.id === selectedElementId;
-                return (
-                  <div
-                    key={el.id}
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSelectedElementId(el.id);
-                    }}
-                    className={`absolute transition-all cursor-move ${
-                      isSelected
-                        ? "ring-2 ring-blue-500 bg-blue-500/10 rounded-sm"
-                        : "hover:ring-1 hover:ring-blue-300"
-                    }`}
-                    style={{
-                      left: `${el.x}%`,
-                      top: `${el.y}%`,
-                      width: `${el.width}%`,
-                      height: `${el.height}%`,
-                      transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined,
-                    }}
-                  >
-                    {isSelected && (
-                      <div className="absolute -top-2 -right-2 w-3.5 h-3.5 bg-blue-600 border border-white rounded-full shadow-xs" />
-                    )}
-                  </div>
-                );
-              })}
-            </div>
+              return (
+                <div
+                  ref={canvasWrapperRef}
+                  onClick={() => setSelectedElementId(null)}
+                  className="relative shadow-2xl transition-all duration-300 rounded-2xl overflow-hidden select-none"
+                  style={{
+                    width: `${displayWidth}px`,
+                    height: `${displayHeight}px`,
+                  }}
+                >
+                  {/* HTML5 Canvas */}
+                  <canvas
+                    ref={previewCanvasRef}
+                    className="w-full h-full block rounded-2xl cursor-crosshair pointer-events-none"
+                  />
+
+                  {/* Interactive DOM Selection Handles overlay with drag & drop */}
+                  {activeElements.map((el) => {
+                    const isSelected = el.id === selectedElementId;
+                    return (
+                      <div
+                        key={el.id}
+                        onMouseDown={(e) => handleElementMouseDown(e, el)}
+                        className={`absolute select-none transition-shadow ${
+                          isSelected
+                            ? "ring-2 ring-blue-500 bg-blue-500/10 rounded-sm z-20 cursor-move"
+                            : "hover:ring-1 hover:ring-blue-300 z-10 cursor-pointer"
+                        }`}
+                        style={{
+                          left: `${el.x}%`,
+                          top: `${el.y}%`,
+                          width: `${el.width}%`,
+                          height: `${el.height}%`,
+                          transform: el.rotation ? `rotate(${el.rotation}deg)` : undefined,
+                        }}
+                      >
+                        {isSelected && (
+                          <>
+                            <span className="absolute -top-5 left-0 px-1.5 py-0.5 rounded bg-blue-600 text-white font-mono text-[9px] uppercase tracking-wide whitespace-nowrap shadow-xs pointer-events-none">
+                              {el.type === "text"
+                                ? (el as IdCardTextElement).text.slice(0, 16) || "Text"
+                                : el.type}
+                            </span>
+                            <div
+                              onMouseDown={(e) => handleResizeMouseDown(e, el)}
+                              className="absolute -bottom-1.5 -right-1.5 w-3.5 h-3.5 bg-blue-600 border-2 border-white rounded-full shadow-md cursor-se-resize hover:scale-125 transition-transform"
+                              title="Drag corner to resize"
+                            />
+                          </>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
 
           {/* Attendee Carousel & Switcher */}
@@ -1261,43 +1619,104 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students }) 
 
           {/* Background Artwork & Preset Themes */}
           <Card padding="sm" className="space-y-3">
-            <span className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
-              <Palette className="w-3.5 h-3.5 text-blue-500" />
-              {activeSide.toUpperCase()} Background Art
-            </span>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-900 dark:text-white uppercase tracking-wider flex items-center gap-1.5">
+                <Palette className="w-3.5 h-3.5 text-blue-500" />
+                {activeSide.toUpperCase()} Background Art
+              </span>
+              {(activeSide === "front" ? template.frontBackground : template.backBackground)?.startsWith("data:") && (
+                <Badge variant="success">Custom Template</Badge>
+              )}
+            </div>
 
             <label className="flex items-center justify-center gap-2 p-2 rounded-xl border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-900 hover:border-blue-500 text-slate-700 dark:text-slate-300 transition-all font-semibold cursor-pointer text-xs">
               <UploadCloud className="w-4 h-4 text-blue-500" />
-              Upload Template Image
-              <input type="file" accept="image/*" onChange={handleBackgroundUpload} className="hidden" />
+              Upload Template Image (PNG/JPG)
+              <input ref={bgInputRef} type="file" accept="image/*" onChange={handleBackgroundUpload} className="hidden" />
             </label>
 
-            <div className="grid grid-cols-2 gap-2 text-[11px]">
+            {/* Template Actions if Custom Background is Loaded */}
+            {(activeSide === "front" ? template.frontBackground : template.backBackground)?.startsWith("data:") && (
+              <div className="p-2.5 rounded-xl bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800/40 space-y-2">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-blue-800 dark:text-blue-200 font-semibold">Template Active:</span>
+                  <span className="font-mono text-blue-600 dark:text-blue-400">
+                    {template.dimensions.canvasWidth} × {template.dimensions.canvasHeight} px
+                  </span>
+                </div>
+                <div className="flex flex-col gap-1.5">
+                  <button
+                    type="button"
+                    onClick={handleClearStarterShapes}
+                    className="w-full py-1.5 px-2 rounded-lg bg-white dark:bg-slate-900 hover:bg-blue-100 dark:hover:bg-blue-900 border border-blue-200 dark:border-blue-800 text-blue-700 dark:text-blue-300 font-bold text-[11px] transition-colors cursor-pointer flex items-center justify-center gap-1.5 shadow-2xs"
+                    title="Removes default solid banners so your custom template graphic is unobstructed"
+                  >
+                    <Eraser className="w-3.5 h-3.5 text-blue-500" />
+                    Clear Starter Shapes (Template Only)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleClearAllElements}
+                    className="w-full py-1 px-2 rounded-lg bg-white dark:bg-slate-900 hover:bg-rose-50 dark:hover:bg-rose-950/40 border border-slate-200 dark:border-slate-800 text-rose-600 dark:text-rose-400 font-semibold text-[11px] transition-colors cursor-pointer flex items-center justify-center gap-1.5"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Clear All Elements (Blank Canvas)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setTemplate((prev) => ({
+                        ...prev,
+                        frontBackground: activeSide === "front" ? "theme:dark-slate" : prev.frontBackground,
+                        backBackground: activeSide === "back" ? "theme:clean-white" : prev.backBackground,
+                      }));
+                    }}
+                    className="w-full py-1 px-2 rounded-lg bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 text-slate-600 dark:text-slate-400 font-medium text-[11px] transition-colors cursor-pointer text-center"
+                  >
+                    Remove Uploaded Image
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Quick Themes */}
+            <div className="space-y-1.5">
+              <span className="text-[10px] text-slate-500 font-bold uppercase">Or Choose Theme Preset:</span>
+              <div className="grid grid-cols-2 gap-2 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() =>
+                    setTemplate((prev) => ({
+                      ...prev,
+                      frontBackground: activeSide === "front" ? "theme:dark-slate" : prev.frontBackground,
+                      backBackground: activeSide === "back" ? "theme:dark-slate" : prev.backBackground,
+                    }))
+                  }
+                  className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-900 text-white font-bold cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all"
+                >
+                  Dark Slate
+                </button>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setTemplate((prev) => ({
+                      ...prev,
+                      frontBackground: activeSide === "front" ? "theme:clean-white" : prev.frontBackground,
+                      backBackground: activeSide === "back" ? "theme:clean-white" : prev.backBackground,
+                    }))
+                  }
+                  className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white text-slate-900 font-bold cursor-pointer hover:ring-2 hover:ring-blue-500 transition-all"
+                >
+                  Clean White
+                </button>
+              </div>
               <button
                 type="button"
-                onClick={() =>
-                  setTemplate((prev) => ({
-                    ...prev,
-                    frontBackground: activeSide === "front" ? "theme:dark-slate" : prev.frontBackground,
-                    backBackground: activeSide === "back" ? "theme:dark-slate" : prev.backBackground,
-                  }))
-                }
-                className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-900 text-white font-bold cursor-pointer"
+                onClick={handleResetStarterTemplate}
+                className="w-full py-1 text-[11px] text-slate-500 hover:text-slate-800 dark:hover:text-slate-200 transition-colors cursor-pointer flex items-center justify-center gap-1"
               >
-                Dark Slate
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  setTemplate((prev) => ({
-                    ...prev,
-                    frontBackground: activeSide === "front" ? "theme:clean-white" : prev.frontBackground,
-                    backBackground: activeSide === "back" ? "theme:clean-white" : prev.backBackground,
-                  }))
-                }
-                className="p-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-white text-slate-900 font-bold cursor-pointer"
-              >
-                Clean White
+                <RotateCcw className="w-3 h-3" />
+                Restore Default University Template
               </button>
             </div>
           </Card>

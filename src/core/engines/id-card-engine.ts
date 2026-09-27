@@ -292,6 +292,15 @@ export class IdCardEngine {
     // 1. Draw Background
     if (customBgImage && customBgImage.complete && customBgImage.naturalWidth > 0) {
       ctx.drawImage(customBgImage, 0, 0, w, h);
+    } else if (bgKey && (bgKey.startsWith("data:") || bgKey.startsWith("http") || bgKey.startsWith("/"))) {
+      try {
+        const bgImg = await IdCardEngine.loadImage(bgKey);
+        ctx.drawImage(bgImg, 0, 0, w, h);
+      } catch (err) {
+        console.warn("Could not draw uploaded background image:", err);
+        ctx.fillStyle = "#FFFFFF";
+        ctx.fillRect(0, 0, w, h);
+      }
     } else {
       // Draw theme gradient
       if (bgKey === "theme:dark-slate" || (!bgKey && isFront)) {

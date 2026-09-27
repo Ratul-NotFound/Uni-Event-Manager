@@ -82,4 +82,38 @@ describe("ID Card Domain Models & Dimensions", () => {
     expect(resolved).not.toContain("undefined");
     expect(resolved).not.toContain("{{NonExistentField}}");
   });
+
+  it("resolves dynamic Excel column headers with spaces and special characters", () => {
+    const student: StudentRecord = {
+      id: "CSE-1024",
+      name: "Alexandria Morgan",
+      email: "alex@university.edu",
+      "Student Name": "Alexandria Morgan",
+      "Roll Number": "1024-CSE",
+      "Course Teacher / Advisor": "Prof. Turing",
+      "Project Title": "Autonomous AI Agent",
+      extra: {
+        "Blood Group": "B+",
+        "Guardian Phone": "+8801700000000",
+      },
+    };
+
+    const text = "{{Student Name}} [{{Roll Number}}] - Advisor: {{Course Teacher / Advisor}}, Project: {{Project Title}}, Blood: {{Blood Group}}";
+    const resolved = resolveIdCardText(text, student);
+    expect(resolved).toBe("Alexandria Morgan [1024-CSE] - Advisor: Prof. Turing, Project: Autonomous AI Agent, Blood: B+");
+  });
+
+  it("resolves common aliases with spaces like {{Student Name}} and {{Student ID}} from core student fields", () => {
+    const student: StudentRecord = {
+      id: "CSE-1024",
+      name: "Alexandria Morgan",
+      email: "alex@university.edu",
+      department: "CSE",
+      batch: "54",
+    };
+
+    const text = "{{Student Name}} | {{Student ID}} | {{Dept}} | {{Intake}}";
+    const resolved = resolveIdCardText(text, student);
+    expect(resolved).toBe("Alexandria Morgan | CSE-1024 | CSE | 54");
+  });
 });

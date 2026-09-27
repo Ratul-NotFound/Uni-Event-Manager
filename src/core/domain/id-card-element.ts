@@ -349,62 +349,73 @@ export interface IdCardTemplate {
 export function resolveIdCardText(text: string, student: StudentRecord): string {
   if (!text) return "";
 
-  let resolved = text
-    .replace(/\{\{\s*(Name|FullName|Student_Name|StudentName)\s*\}\}/gi, student.name || "")
-    .replace(/\{\{\s*(Student_ID|ID|Roll|StudentID)\s*\}\}/gi, student.id || "")
-    .replace(/\{\{\s*(Department|Dept)\s*\}\}/gi, student.department || "")
-    .replace(/\{\{\s*(Batch)\s*\}\}/gi, student.batch || "")
-    .replace(/\{\{\s*(Section|Sec)\s*\}\}/gi, student.section || "")
-    .replace(/\{\{\s*(Email)\s*\}\}/gi, student.email || "")
-    .replace(/\{\{\s*(Phone|Mobile|Contact)\s*\}\}/gi, student.phone || "")
-    .replace(/\{\{\s*(AssignedSeat|Seat|SeatNo)\s*\}\}/gi, student.assignedSeat || "")
-    .replace(/\{\{\s*(AssignedRoom|Room|Venue)\s*\}\}/gi, student.assignedRoom || "")
-    .replace(/\{\{\s*(Date)\s*\}\}/gi, new Date().toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" }));
-
-  // Check student extra properties
-  if (student.extra) {
-    if (student.extra.team) {
-      resolved = resolved.replace(/\{\{\s*(Team|TeamName|Team_Name)\s*\}\}/gi, student.extra.team);
-    }
-    if (student.extra.university) {
-      resolved = resolved.replace(/\{\{\s*(University|Institution|College|Univ)\s*\}\}/gi, student.extra.university);
-    }
-    if (student.extra.bloodGroup) {
-      resolved = resolved.replace(/\{\{\s*(BloodGroup|Blood_Group|Blood)\s*\}\}/gi, student.extra.bloodGroup);
-    }
-  }
-
-  // Dynamic regex for any other arbitrary custom column from uploaded Excel sheets
-  resolved = resolved.replace(/\{\{\s*([^}]+)\s*\}\}/g, (match, rawKey) => {
+  return text.replace(/\{\{\s*([^}]+)\s*\}\}/g, (match, rawKey) => {
     const key = rawKey.trim();
     const lowerKey = key.toLowerCase();
+    const cleanKey = lowerKey.replace(/[^a-z0-9]/g, "");
 
-    // Check direct property
+    // 1. Direct exact property on student
     if ((student as any)[key] !== undefined && (student as any)[key] !== null) {
       return String((student as any)[key]);
     }
 
-    // Check student.extra
+    // 2. Direct exact property on student.extra
+    if (student.extra && (student.extra as any)[key] !== undefined && (student.extra as any)[key] !== null) {
+      return String((student.extra as any)[key]);
+    }
+
+    // 3. Case-insensitive / normalized key in student
+    for (const [k, v] of Object.entries(student)) {
+      if (k === "extra") continue;
+      if (k.toLowerCase() === lowerKey || k.toLowerCase().replace(/[^a-z0-9]/g, "") === cleanKey) {
+        if (v !== undefined && v !== null) return String(v);
+      }
+    }
+
+    // 4. Case-insensitive / normalized key in student.extra
     if (student.extra) {
       for (const [k, v] of Object.entries(student.extra)) {
-        if (k.toLowerCase() === lowerKey || k.toLowerCase().replace(/[\s_-]/g, "") === lowerKey.replace(/[\s_-]/g, "")) {
-          return String(v ?? "");
+        if (k.toLowerCase() === lowerKey || k.toLowerCase().replace(/[^a-z0-9]/g, "") === cleanKey) {
+          if (v !== undefined && v !== null) return String(v);
         }
       }
     }
 
-    // Check student case-insensitive
-    for (const [k, v] of Object.entries(student)) {
-      if (k.toLowerCase() === lowerKey || k.toLowerCase().replace(/[\s_-]/g, "") === lowerKey.replace(/[\s_-]/g, "")) {
-        return String(v ?? "");
-      }
+    // 5. Common core aliases fallbacks
+    if (["name", "fullname", "studentname", "participant", "participantname"].includes(cleanKey)) {
+      return student.name || "";
+    }
+    if (["id", "studentid", "roll", "rollno", "rollnumber", "reg", "regno", "registration", "registrationno"].includes(cleanKey)) {
+      return student.id || "";
+    }
+    if (["department", "dept", "program", "major"].includes(cleanKey)) {
+      return student.department || "";
+    }
+    if (["batch", "intake", "year", "session"].includes(cleanKey)) {
+      return student.batch || "";
+    }
+    if (["section", "sec", "group"].includes(cleanKey)) {
+      return student.section || "";
+    }
+    if (["email", "mail", "emailaddress"].includes(cleanKey)) {
+      return student.email || "";
+    }
+    if (["phone", "mobile", "contact", "whatsapp", "cell"].includes(cleanKey)) {
+      return student.phone || "";
+    }
+    if (["assignedseat", "seat", "seatno"].includes(cleanKey)) {
+      return student.assignedSeat || "";
+    }
+    if (["assignedroom", "room", "venue", "hall"].includes(cleanKey)) {
+      return student.assignedRoom || "";
+    }
+    if (["date"].includes(cleanKey)) {
+      return new Date().toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
     }
 
     // Fallback: missing tag resolves safely to empty string
     return "";
   });
-
-  return resolved;
 }
 
 export function createDefaultIdCardTemplate(): IdCardTemplate {
