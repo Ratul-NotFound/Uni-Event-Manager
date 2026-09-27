@@ -746,11 +746,13 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
     };
 
     window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
+    window.addEventListener("mouseup", handleMouseUp, { capture: true });
+    window.addEventListener("blur", handleMouseUp);
     return () => {
       if (rafId) cancelAnimationFrame(rafId);
       window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("mouseup", handleMouseUp, { capture: true });
+      window.removeEventListener("blur", handleMouseUp);
     };
   }, [isDraggingElement, isResizingElement, dragStartPos, initialElementPos, selectedElementId]);
 
@@ -1317,7 +1319,6 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
                           setSelectedElementId(el.id);
                         }}
                         onMouseDown={(e) => handleElementMouseDown(e, el)}
-                        onMouseUp={(e) => e.stopPropagation()}
                         className={`absolute select-none transition-shadow ${
                           isSelected
                             ? "ring-2 ring-blue-500 bg-blue-500/10 rounded-sm z-20 cursor-move"
@@ -1340,7 +1341,6 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
                             </span>
                             <div
                               onMouseDown={(e) => handleResizeMouseDown(e, el)}
-                              onMouseUp={(e) => e.stopPropagation()}
                               onClick={(e) => {
                                 e.stopPropagation();
                                 setSelectedElementId(el.id);
