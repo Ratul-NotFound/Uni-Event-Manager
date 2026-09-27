@@ -42,13 +42,15 @@ import {
 
 export interface SeatPlanViewProps {
   students: StudentRecord[];
+  onRosterUpdate?: (records: StudentRecord[]) => void;
 }
 
 export type PhaseTab = "examinees" | "architecture" | "rules" | "dispatch";
 
-export const SeatPlanView: React.FC<SeatPlanViewProps> = ({ students }) => {
+export const SeatPlanView: React.FC<SeatPlanViewProps> = ({ students, onRosterUpdate }) => {
   // 4-Phase Sequential Navigation
   const [activePhase, setActivePhase] = useState<PhaseTab>("examinees");
+  const [syncStatus, setSyncStatus] = useState<string | null>(null);
 
   // Configured Rooms State
   const [rooms, setRooms] = useState<RoomGrid[]>([
@@ -431,7 +433,43 @@ export const SeatPlanView: React.FC<SeatPlanViewProps> = ({ students }) => {
     }
   };
 
+    const handleSyncSeatsToRoster = () => {
+    const seatMap = new Map<string, { assignedRoom: string; assignedRow: string; assignedSeat: string }>();
+    allocatedRooms.forEach((ar) => {
+      ar.seats.forEach((s) => {
+        if (!s.isAisle && s.student) {
+          seatMap.set(s.student.id, {
+            assignedRoom: ar.roomName,
+            assignedRow: String(s.position.rowIndex + 1),
+            assignedSeat: s.position.label,
+          });
+        }
+      });
+    });
+
+    const updatedStudents = students.map((st) => {
+      const alloc = seatMap.get(st.id);
+      if (alloc) {
+        return {
+          ...st,
+          assignedRoom: alloc.assignedRoom,
+          assignedRow: alloc.assignedRow,
+          assignedSeat: alloc.assignedSeat,
+        };
+      }
+      return st;
+    });
+
+    onRosterUpdate?.(updatedStudents);
+    setSyncStatus(`✓ Synced seating allocations for ${seatMap.size} attendees across ID Cards, Badges, and Pipeline!`);
+    setTimeout(() => setSyncStatus(null), 5000);
+    return updatedStudents;
+  };
+
   const handleExportEnrichedRoster = () => {
+    // Auto sync allocations back into the active domain roster
+    handleSyncSeatsToRoster();
+
     const enrichedList: any[] = [];
     allocatedRooms.forEach((ar) => {
       ar.seats.forEach((s) => {
@@ -1520,6 +1558,37 @@ export const SeatPlanView: React.FC<SeatPlanViewProps> = ({ students }) => {
                       Export Seated Excel
                     </Button>
                   </div>
+
+                  <div className="p-3 rounded-xl border border-blue-200 dark:border-blue-900/50 bg-blue-50/50 dark:bg-blue-950/20 space-y-2 shadow-2xs">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 className="w-4 h-4 text-blue-600 dark:text-blue-400" />
+                        <span className="font-bold text-slate-900 dark:text-white text-xs">
+                          Sync to Global Pipeline
+                        </span>
+                      </div>
+                      <Badge variant="primary">ID & Certs</Badge>
+                    </div>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      Pushes room & seat assignments to ID Cards, Certificates, Badges, and Local Storage.
+                    </p>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      className="w-full text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800 hover:bg-blue-100 dark:hover:bg-blue-900/40"
+                      leftIcon={<ArrowLeftRight className="w-4 h-4" />}
+                      onClick={handleSyncSeatsToRoster}
+                    >
+                      Sync Seating to Roster
+                    </Button>
+                  </div>
+
+                  {syncStatus && (
+                    <div className="p-2.5 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800 text-emerald-700 dark:text-emerald-300 text-xs font-medium flex items-center gap-2 animate-fadeIn">
+                      <CheckCircle2 className="w-4 h-4 shrink-0" />
+                      <span>{syncStatus}</span>
+                    </div>
+                  )}
                 </div>
               </div>
             )}

@@ -10,6 +10,7 @@ import { Button } from "@/components/common/Button";
 import { Card } from "@/components/common/Card";
 import { Badge } from "@/components/common/Badge";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
+import { LocalStorageSyncService } from "@/core/storage/local-storage-sync";
 import { Award, Search, Download, ArrowLeft, CheckCircle2, AlertCircle } from "lucide-react";
 
 export default function StudentKioskPage() {
@@ -29,63 +30,88 @@ export default function StudentKioskPage() {
 
     setTimeout(() => {
       setIsSearching(false);
-      // Demo lookup: matches any ID or demo student
-      setFoundStudent({
-        id: clean,
-        name: clean.includes("1024") ? "Alexandria Morgan" : "Participant Student",
-        department: clean.includes("CSE") ? "Computer Science & Engineering" : "General Department",
-        batch: "Batch 52",
-        section: "A",
-        extra: { position: "Honorable Participant" },
-      });
-    }, 600);
+      const localStudents = LocalStorageSyncService.loadStudents();
+      if (localStudents.length > 0) {
+        const match = localStudents.find(
+          (s) =>
+            s.id?.trim().toUpperCase() === clean ||
+            s.email?.trim().toUpperCase() === clean ||
+            s.phone?.trim() === clean
+        );
+        if (match) {
+          setFoundStudent(match);
+        } else {
+          setErrorMsg(`No record found matching "${clean}". Please verify your Student ID / Roll Number or contact the event organizers.`);
+        }
+      } else {
+        // Fallback demo student if organizer has not uploaded a roster yet
+        setFoundStudent({
+          id: clean,
+          name: clean.includes("1024") ? "Alexandria Morgan" : "Participant Student",
+          department: clean.includes("CSE") ? "Computer Science & Engineering" : "General Department",
+          batch: "Batch 52",
+          section: "A",
+          extra: { position: "Honorable Participant" },
+        });
+      }
+    }, 400);
   };
 
   const handleDownloadCertificate = async (format: "png" | "pdf") => {
     if (!foundStudent) return;
-    const template = new CertificateTemplate("University Event Award", 1920, 1080);
-    template.addElement(
-      new TextElement({
-        id: "t1",
-        x: 960,
-        y: 280,
-        text: "CERTIFICATE OF PARTICIPATION",
-        fontSize: 48,
-        color: "#D97706",
-        align: "center",
-      })
-    );
-    template.addElement(
-      new TextElement({
-        id: "t2",
-        x: 960,
-        y: 470,
-        text: foundStudent.name,
-        fontSize: 64,
-        color: "#0F172A",
-        align: "center",
-      })
-    );
-    template.addElement(
-      new TextElement({
-        id: "t3",
-        x: 960,
-        y: 600,
-        text: `Student ID: ${foundStudent.id} | Department: ${foundStudent.department}`,
-        fontSize: 24,
-        color: "#2563EB",
-        align: "center",
-      })
-    );
-    template.addElement(
-      new QrElement({
-        id: "qr",
-        x: 1720,
-        y: 920,
-        size: 130,
-        payloadPattern: `https://campusclub.vercel.app/verify?id=${foundStudent.id}`,
-      })
-    );
+    let template: CertificateTemplate;
+    const savedTemplateJson = LocalStorageSyncService.loadCertTemplateJSON();
+    if (savedTemplateJson) {
+      try {
+        template = CertificateTemplate.fromJSON(savedTemplateJson);
+      } catch {
+        template = new CertificateTemplate("University Event Award", 1920, 1080);
+      }
+    } else {
+      template = new CertificateTemplate("University Event Award", 1920, 1080);
+      template.addElement(
+        new TextElement({
+          id: "t1",
+          x: 960,
+          y: 280,
+          text: "CERTIFICATE OF PARTICIPATION",
+          fontSize: 48,
+          color: "#D97706",
+          align: "center",
+        })
+      );
+      template.addElement(
+        new TextElement({
+          id: "t2",
+          x: 960,
+          y: 470,
+          text: foundStudent.name,
+          fontSize: 64,
+          color: "#0F172A",
+          align: "center",
+        })
+      );
+      template.addElement(
+        new TextElement({
+          id: "t3",
+          x: 960,
+          y: 600,
+          text: `Student ID: ${foundStudent.id} | Department: ${foundStudent.department}`,
+          fontSize: 24,
+          color: "#2563EB",
+          align: "center",
+        })
+      );
+      template.addElement(
+        new QrElement({
+          id: "qr",
+          x: 1720,
+          y: 920,
+          size: 130,
+          payloadPattern: `https://campusclub.vercel.app/verify?id=${foundStudent.id}`,
+        })
+      );
+    }
 
     const blob = await BulkGeneratorEngine.generateSingle(template, foundStudent, format);
     saveAs(blob, `Certificate_${foundStudent.id}_${foundStudent.name}.${format}`);

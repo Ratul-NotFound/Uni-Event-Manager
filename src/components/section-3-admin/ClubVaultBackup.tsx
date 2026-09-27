@@ -11,10 +11,12 @@ import { ShieldCheck, Download, UploadCloud, Lock, Key, CheckCircle2 } from "luc
 
 export interface ClubVaultBackupProps {
   students: StudentRecord[];
+  onRosterUpdate?: (records: StudentRecord[]) => void;
 }
 
 export const ClubVaultBackup: React.FC<ClubVaultBackupProps> = ({
   students,
+  onRosterUpdate,
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [verifyIdInput, setVerifyIdInput] = useState("");
@@ -48,6 +50,9 @@ export const ClubVaultBackup: React.FC<ClubVaultBackupProps> = ({
     reader.onload = (evt) => {
       try {
         const json = JSON.parse(evt.target?.result as string);
+        if (Array.isArray(json.studentRecords) && json.studentRecords.length > 0) {
+          onRosterUpdate?.(json.studentRecords);
+        }
         setVaultStatus(
           `✓ Imported vault from ${json.academicYear || "Previous Committee"}: ${json.studentRecords?.length || 0} students & templates restored.`
         );

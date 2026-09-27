@@ -25,6 +25,7 @@ import {
   IdCardGenerationProgress,
   PhotoMatchResult,
 } from "@/core/engines/id-card-engine";
+import { LocalStorageSyncService } from "@/core/storage/local-storage-sync";
 import { Button } from "@/components/common/Button";
 import { Card } from "@/components/common/Card";
 import { Badge } from "@/components/common/Badge";
@@ -75,7 +76,8 @@ import {
 
 export interface IdCardStudioViewProps {
   students: StudentRecord[];
-  onRosterUpdate?: (records: StudentRecord[]) => void;
+  columnHeaders?: string[];
+  onRosterUpdate?: (records: StudentRecord[], headers?: string[]) => void;
 }
 
 export const ID_CARD_FONTS = [
@@ -90,14 +92,23 @@ export const ID_CARD_FONTS = [
   { name: "Roboto", label: "Roboto (Universal Standard)" },
 ];
 
-export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, onRosterUpdate }) => {
+export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
+  students,
+  columnHeaders,
+  onRosterUpdate,
+}) => {
   // Local roster state synchronized with parent or spreadsheet upload
   const [localStudents, setLocalStudents] = useState<StudentRecord[]>(() => {
     if (students && students.length > 0) return students;
     return [];
   });
-  const [uploadedRosterName, setUploadedRosterName] = useState<string | null>(null);
-  const [detectedHeaders, setDetectedHeaders] = useState<string[]>([]);
+  const [uploadedRosterName, setUploadedRosterName] = useState<string | null>(() => {
+    return LocalStorageSyncService.loadLastRosterName();
+  });
+  const [detectedHeaders, setDetectedHeaders] = useState<string[]>(() => {
+    if (columnHeaders && columnHeaders.length > 0) return columnHeaders;
+    return LocalStorageSyncService.loadHeaders();
+  });
 
   // Sync when parent students prop changes
   useEffect(() => {
@@ -105,6 +116,13 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
       setLocalStudents(students);
     }
   }, [students]);
+
+  // Sync when parent columnHeaders prop changes
+  useEffect(() => {
+    if (columnHeaders && columnHeaders.length > 0) {
+      setDetectedHeaders(columnHeaders);
+    }
+  }, [columnHeaders]);
 
   // Safe sample student fallback if roster is empty
   const sampleAttendees: StudentRecord[] = useMemo(
@@ -150,8 +168,18 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
     return sampleAttendees;
   }, [localStudents, sampleAttendees]);
 
-  // Core Template State
-  const [template, setTemplate] = useState<IdCardTemplate>(() => createDefaultIdCardTemplate());
+  // Core Template State (restored from LocalStorage if user previously edited)
+  const [template, setTemplate] = useState<IdCardTemplate>(() => {
+    const saved = LocalStorageSyncService.loadIdCardTemplate();
+    if (saved) return saved;
+    return createDefaultIdCardTemplate();
+  });
+
+  // Auto-save template changes to LocalStorage
+  useEffect(() => {
+    LocalStorageSyncService.saveIdCardTemplate(template);
+  }, [template]);
+
   const [activeSide, setActiveSide] = useState<"front" | "back">("front");
   const [selectedElementId, setSelectedElementId] = useState<string | null>("student-name");
   const [zoomLevel, setZoomLevel] = useState<number>(100);
@@ -159,8 +187,11 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
   // Dragging & Resizing State on Canvas
   const [isDraggingElement, setIsDraggingElement] = useState(false);
   const [isResizingElement, setIsResizingElement] = useState(false);
-  const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
-  const [initialElementPos, setInitialElementPos] = useState({ x: 0, y: 0, width: 0, height: 0 });
+  const isPointerDownRef = useRef(false);
+  const dragModeRef = useRef<"drag" | "resize" | null>(null);
+  const dragTargetIdRef = useRef<string | null>(null);
+  const dragStartPosRef = useRef({ x: 0, y: 0 });
+  const initialElementPosRef = useRef({ x: 0, y: 0, width: 0, height: 0 });
   const justDraggedRef = useRef(false);
   const hasMovedSignificantlyRef = useRef(false);
 
@@ -326,7 +357,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
   };
 
   // Element Update Dispatcher
-  const updateElement = (id: string, updates: Partial<any>) => {
+  const updateElement = useCallback((id: string, updates: Partial<any>) => {
     setTemplate((prev) => {
       const isFront = activeSide === "front";
       const targetList = isFront ? prev.frontElements : prev.backElements;
@@ -350,7 +381,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
         backElements: !isFront ? updatedList : prev.backElements,
       };
     });
-  };
+  }, [activeSide]);
 
   // Add New Element to Active Face
   const addElement = (type: "text" | "photo" | "barcode_qr" | "shape") => {
@@ -501,7 +532,9 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
             );
             setLocalStudents(mapped);
             setPreviewIndex(0);
-            onRosterUpdate?.(mapped);
+            LocalStorageSyncService.saveStudents(mapped, file.name);
+            LocalStorageSyncService.saveHeaders(headers);
+            onRosterUpdate?.(mapped, headers);
           }
         },
       });
@@ -524,7 +557,9 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
           );
           setLocalStudents(mapped);
           setPreviewIndex(0);
-          onRosterUpdate?.(mapped);
+          LocalStorageSyncService.saveStudents(mapped, file.name);
+          LocalStorageSyncService.saveHeaders(headers);
+          onRosterUpdate?.(mapped, headers);
         }
       };
       reader.readAsBinaryString(file);
@@ -537,6 +572,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
     setUploadedRosterName(null);
     setDetectedHeaders([]);
     setPreviewIndex(0);
+    LocalStorageSyncService.saveStudents(sampleAttendees, "Demo Sample Roster");
     onRosterUpdate?.(sampleAttendees);
   };
 
@@ -546,6 +582,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
     setUploadedRosterName(null);
     setDetectedHeaders([]);
     setPreviewIndex(0);
+    LocalStorageSyncService.clearRoster();
     onRosterUpdate?.([]);
   };
 
@@ -677,35 +714,39 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
 
   // Canvas Mouse Drag & Resize Handlers
   const handleElementMouseDown = (e: React.MouseEvent, el: IdCardElement) => {
+    e.preventDefault();
     e.stopPropagation();
     setSelectedElementId(el.id);
-    setIsDraggingElement(true);
-    setIsResizingElement(false);
+    isPointerDownRef.current = true;
+    dragModeRef.current = "drag";
+    dragTargetIdRef.current = el.id;
     hasMovedSignificantlyRef.current = false;
     justDraggedRef.current = false;
-    setDragStartPos({ x: e.clientX, y: e.clientY });
-    setInitialElementPos({ x: el.x, y: el.y, width: el.width, height: el.height });
+    dragStartPosRef.current = { x: e.clientX, y: e.clientY };
+    initialElementPosRef.current = { x: el.x, y: el.y, width: el.width, height: el.height };
   };
 
   const handleResizeMouseDown = (e: React.MouseEvent, el: IdCardElement) => {
+    e.preventDefault();
     e.stopPropagation();
     setSelectedElementId(el.id);
-    setIsResizingElement(true);
-    setIsDraggingElement(false);
+    isPointerDownRef.current = true;
+    dragModeRef.current = "resize";
+    dragTargetIdRef.current = el.id;
     hasMovedSignificantlyRef.current = false;
     justDraggedRef.current = false;
-    setDragStartPos({ x: e.clientX, y: e.clientY });
-    setInitialElementPos({ x: el.x, y: el.y, width: el.width, height: el.height });
+    dragStartPosRef.current = { x: e.clientX, y: e.clientY };
+    initialElementPosRef.current = { x: el.x, y: el.y, width: el.width, height: el.height };
   };
 
   useEffect(() => {
-    if (!isDraggingElement && !isResizingElement) return;
-
     let rafId: number | null = null;
 
     const handleMouseMove = (e: MouseEvent) => {
-      const dist = Math.hypot(e.clientX - dragStartPos.x, e.clientY - dragStartPos.y);
-      if (dist < 3) return; // Prevent minor jitter from triggering drag jump
+      if (!isPointerDownRef.current || !dragModeRef.current || !dragTargetIdRef.current) return;
+
+      const dist = Math.hypot(e.clientX - dragStartPosRef.current.x, e.clientY - dragStartPosRef.current.y);
+      if (dist < 4) return; // Prevent minor jitter from triggering drag jump
 
       hasMovedSignificantlyRef.current = true;
       justDraggedRef.current = true;
@@ -713,33 +754,41 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
       if (rafId) cancelAnimationFrame(rafId);
       rafId = requestAnimationFrame(() => {
         const cardEl = canvasWrapperRef.current;
-        if (!cardEl || !selectedElementId) return;
+        const targetId = dragTargetIdRef.current;
+        if (!cardEl || !targetId) return;
 
         const rect = cardEl.getBoundingClientRect();
-        const deltaXPercent = ((e.clientX - dragStartPos.x) / rect.width) * 100;
-        const deltaYPercent = ((e.clientY - dragStartPos.y) / rect.height) * 100;
+        if (rect.width === 0 || rect.height === 0) return;
 
-        if (isDraggingElement) {
-          const newX = Math.max(0, Math.min(100 - initialElementPos.width, Math.round(initialElementPos.x + deltaXPercent)));
-          const newY = Math.max(0, Math.min(100 - initialElementPos.height, Math.round(initialElementPos.y + deltaYPercent)));
-          updateElement(selectedElementId, { x: newX, y: newY });
-        } else if (isResizingElement) {
-          const newW = Math.max(5, Math.min(100 - initialElementPos.x, Math.round(initialElementPos.width + deltaXPercent)));
-          const newH = Math.max(2, Math.min(100 - initialElementPos.y, Math.round(initialElementPos.height + deltaYPercent)));
-          updateElement(selectedElementId, { width: newW, height: newH });
+        const deltaXPercent = ((e.clientX - dragStartPosRef.current.x) / rect.width) * 100;
+        const deltaYPercent = ((e.clientY - dragStartPosRef.current.y) / rect.height) * 100;
+
+        if (dragModeRef.current === "drag") {
+          setIsDraggingElement(true);
+          const newX = Math.max(0, Math.min(100 - initialElementPosRef.current.width, Math.round(initialElementPosRef.current.x + deltaXPercent)));
+          const newY = Math.max(0, Math.min(100 - initialElementPosRef.current.height, Math.round(initialElementPosRef.current.y + deltaYPercent)));
+          updateElement(targetId, { x: newX, y: newY });
+        } else if (dragModeRef.current === "resize") {
+          setIsResizingElement(true);
+          const newW = Math.max(5, Math.min(100 - initialElementPosRef.current.x, Math.round(initialElementPosRef.current.width + deltaXPercent)));
+          const newH = Math.max(2, Math.min(100 - initialElementPosRef.current.y, Math.round(initialElementPosRef.current.height + deltaYPercent)));
+          updateElement(targetId, { width: newW, height: newH });
         }
       });
     };
 
     const handleMouseUp = () => {
       if (rafId) cancelAnimationFrame(rafId);
+      isPointerDownRef.current = false;
+      dragModeRef.current = null;
+      dragTargetIdRef.current = null;
       setIsDraggingElement(false);
       setIsResizingElement(false);
 
       if (hasMovedSignificantlyRef.current) {
         setTimeout(() => {
           justDraggedRef.current = false;
-        }, 150);
+        }, 120);
       } else {
         justDraggedRef.current = false;
       }
@@ -747,14 +796,18 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
 
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp, { capture: true });
+    window.addEventListener("pointerup", handleMouseUp, { capture: true });
     window.addEventListener("blur", handleMouseUp);
+    window.addEventListener("contextmenu", handleMouseUp);
     return () => {
       if (rafId) cancelAnimationFrame(rafId);
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp, { capture: true });
+      window.removeEventListener("pointerup", handleMouseUp, { capture: true });
       window.removeEventListener("blur", handleMouseUp);
+      window.removeEventListener("contextmenu", handleMouseUp);
     };
-  }, [isDraggingElement, isResizingElement, dragStartPos, initialElementPos, selectedElementId]);
+  }, [updateElement]);
 
   // Single preview photo upload for current attendee
   const handleSinglePhotoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1314,6 +1367,8 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
                     return (
                       <div
                         key={el.id}
+                        draggable={false}
+                        onDragStart={(e) => e.preventDefault()}
                         onClick={(e) => {
                           e.stopPropagation();
                           setSelectedElementId(el.id);
@@ -1340,6 +1395,8 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students, on
                                 : el.type}
                             </span>
                             <div
+                              draggable={false}
+                              onDragStart={(e) => e.preventDefault()}
                               onMouseDown={(e) => handleResizeMouseDown(e, el)}
                               onClick={(e) => {
                                 e.stopPropagation();

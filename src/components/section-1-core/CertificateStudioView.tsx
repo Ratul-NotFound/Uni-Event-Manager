@@ -53,9 +53,11 @@ import {
   Eye,
   CheckCircle2,
 } from "lucide-react";
+import { LocalStorageSyncService } from "@/core/storage/local-storage-sync";
 
 export interface CertificateStudioViewProps {
   students: StudentRecord[];
+  columnHeaders?: string[];
 }
 
 // 15+ Curated Certificate Google Fonts
@@ -486,6 +488,7 @@ const createPresetTemplate = (presetKey: string): CertificateTemplate => {
 
 export const CertificateStudioView: React.FC<CertificateStudioViewProps> = ({
   students,
+  columnHeaders,
 }) => {
   // =========================================================================
   // WORKFLOW PANEL ACTIVE TAB (1: Data & Scope | 2: Artwork | 3: Fields | 4: Export)
@@ -513,10 +516,42 @@ export const CertificateStudioView: React.FC<CertificateStudioViewProps> = ({
     },
   });
 
-  // Active Template State
-  const [template, setTemplate] = useState<CertificateTemplate>(() =>
-    createPresetTemplate("academic")
-  );
+  // Active Template State (Restored from Local Storage if available)
+  const [template, setTemplate] = useState<CertificateTemplate>(() => {
+    const saved = LocalStorageSyncService.loadCertTemplateJSON();
+    if (saved) {
+      try {
+        return CertificateTemplate.fromJSON(saved);
+      } catch {
+        // fallback
+      }
+    }
+    return createPresetTemplate("academic");
+  });
+
+  // Automatically persist customized certificate template to Local Storage
+  useEffect(() => {
+    if (template) {
+      LocalStorageSyncService.saveCertTemplateJSON(template.toJSON());
+    }
+  }, [template]);
+
+  // Detected Dynamic Spreadsheet Column Headers
+  const detectedHeaders = useMemo(() => {
+    const set = new Set<string>();
+    (columnHeaders || LocalStorageSyncService.loadHeaders() || []).forEach((h) => set.add(h));
+    students.forEach((st) => {
+      Object.keys(st).forEach((k) => {
+        if (!["extra", "claimedTokens"].includes(k) && typeof (st as any)[k] !== "object") {
+          set.add(k);
+        }
+      });
+      if (st.extra) {
+        Object.keys(st.extra).forEach((k) => set.add(k));
+      }
+    });
+    return Array.from(set);
+  }, [columnHeaders, students]);
 
   // Active Template Preset Name
   const [activePreset, setActivePreset] = useState<string>("academic");
@@ -1110,18 +1145,36 @@ export const CertificateStudioView: React.FC<CertificateStudioViewProps> = ({
     }
   };
 
-  // List of standard certificate fields for Tab 3 Information Placement
-  const availableFields = [
-    { label: "Recipient Full Name", tag: "{{Name}}", desc: "Student or Award Winner Name", defaultSize: 64 },
-    { label: "Course Teacher / Advisor", tag: "{{Course_Teacher}}", desc: "Faculty Advisor or Supervisor", defaultSize: 22 },
-    { label: "Contest Team Name", tag: "{{Team_Name}}", desc: "Participating Team", defaultSize: 24 },
-    { label: "Academic Department", tag: "{{Department}}", desc: "Faculty / Major", defaultSize: 24 },
-    { label: "Student Roll / ID", tag: "{{Student_ID}}", desc: "Official University ID", defaultSize: 18 },
-    { label: "Award / Rank / Position", tag: "{{Position}}", desc: "Champion, Runner-Up, Participant", defaultSize: 26 },
-    { label: "Project Title", tag: "{{Project_Title}}", desc: "Submission or Project Title", defaultSize: 22 },
-    { label: "Issue Date", tag: "{{Date}}", desc: "Event or Graduation Date", defaultSize: 18 },
-    { label: "Cert Hash / ID", tag: "{{Certificate_No}}", desc: "Unique Verification Code", defaultSize: 16 },
-  ];
+  // List of standard and dynamic spreadsheet fields for Tab 3 Information Placement
+  const availableFields = useMemo(() => {
+    const base = [
+      { label: "Recipient Full Name", tag: "{{Name}}", desc: "Student or Award Winner Name", defaultSize: 64 },
+      { label: "Course Teacher / Advisor", tag: "{{Course_Teacher}}", desc: "Faculty Advisor or Supervisor", defaultSize: 22 },
+      { label: "Contest Team Name", tag: "{{Team_Name}}", desc: "Participating Team", defaultSize: 24 },
+      { label: "Academic Department", tag: "{{Department}}", desc: "Faculty / Major", defaultSize: 24 },
+      { label: "Student Roll / ID", tag: "{{Student_ID}}", desc: "Official University ID", defaultSize: 18 },
+      { label: "Award / Rank / Position", tag: "{{Position}}", desc: "Champion, Runner-Up, Participant", defaultSize: 26 },
+      { label: "Project Title", tag: "{{Project_Title}}", desc: "Submission or Project Title", defaultSize: 22 },
+      { label: "Issue Date", tag: "{{Date}}", desc: "Event or Graduation Date", defaultSize: 18 },
+      { label: "Cert Hash / ID", tag: "{{Certificate_No}}", desc: "Unique Verification Code", defaultSize: 16 },
+    ];
+
+    const standardTags = new Set(["name", "id", "department", "batch", "section", "email", "phone", "courseteacher", "teamname", "projecttitle", "certificateno", "position"]);
+    detectedHeaders.forEach((header) => {
+      const cleanHeader = header.trim();
+      const norm = cleanHeader.toLowerCase().replace(/[^a-z0-9]/g, "");
+      if (!standardTags.has(norm) && !base.some((b) => b.tag.toLowerCase().replace(/[^a-z0-9]/g, "") === norm)) {
+        base.push({
+          label: cleanHeader.replace(/_/g, " "),
+          tag: `{{${cleanHeader}}}`,
+          desc: `Custom column from uploaded spreadsheet`,
+          defaultSize: 22,
+        });
+      }
+    });
+
+    return base;
+  }, [detectedHeaders]);
 
   return (
     <div className="w-full space-y-4">

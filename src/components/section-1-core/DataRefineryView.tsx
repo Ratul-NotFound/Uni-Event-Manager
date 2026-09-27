@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useRef, useMemo } from "react";
+import React, { useState, useRef, useMemo, useEffect } from "react";
 import * as XLSX from "xlsx";
 import Papa from "papaparse";
 import { THEME } from "@/styles/theme";
@@ -41,7 +41,7 @@ import {
 
 export interface DataRefineryViewProps {
   roster: StudentRoster;
-  onRosterUpdate: (records: StudentRecord[]) => void;
+  onRosterUpdate: (records: StudentRecord[], headers?: string[]) => void;
 }
 
 export const DataRefineryView: React.FC<DataRefineryViewProps> = ({
@@ -67,6 +67,14 @@ export const DataRefineryView: React.FC<DataRefineryViewProps> = ({
     const existing = roster.getColumnHeaders();
     return existing && existing.length > 0 ? existing : defaultInitialColumns;
   });
+
+  // Sync dynamic columns whenever roster column headers update
+  useEffect(() => {
+    const existing = roster.getColumnHeaders();
+    if (existing && existing.length > 0) {
+      setDynamicColumns(existing);
+    }
+  }, [roster]);
 
   // Selected Target Column for Row-Wise Transformations
   const [targetTransformCol, setTargetTransformCol] = useState<string>("all");
@@ -143,7 +151,7 @@ export const DataRefineryView: React.FC<DataRefineryViewProps> = ({
             const mapped = rawRows.map((row: any, i: number) =>
               DataRefineryEngine.mapRawRowToStudent(row, i)
             );
-            onRosterUpdate(mapped);
+            onRosterUpdate(mapped, headers);
           }
         },
       });
@@ -165,7 +173,7 @@ export const DataRefineryView: React.FC<DataRefineryViewProps> = ({
           const mapped = rawRows.map((row: any, i: number) =>
             DataRefineryEngine.mapRawRowToStudent(row, i)
           );
-          onRosterUpdate(mapped);
+          onRosterUpdate(mapped, headers);
         }
       };
       reader.readAsBinaryString(file);

@@ -1,9 +1,10 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { THEME } from "@/styles/theme";
 import { StudentRecord, StudentRoster } from "@/core/domain/roster";
+import { LocalStorageSyncService } from "@/core/storage/local-storage-sync";
 import { ThemeToggle } from "@/components/common/ThemeToggle";
 
 // Section 1: Core Event Pipeline Components
@@ -59,6 +60,21 @@ export default function CampusClubApp() {
   // Global Roster State (Shared across all modules)
   const [roster] = useState(() => new StudentRoster());
   const [students, setStudents] = useState<StudentRecord[]>([]);
+  const [isStorageLoaded, setIsStorageLoaded] = useState(false);
+
+  // Restore saved roster and headers from Local Storage on initial load
+  useEffect(() => {
+    const savedStudents = LocalStorageSyncService.loadStudents();
+    const savedHeaders = LocalStorageSyncService.loadHeaders();
+    if (savedStudents && savedStudents.length > 0) {
+      roster.setRecords(savedStudents);
+      if (savedHeaders && savedHeaders.length > 0) {
+        roster.setColumnHeaders(savedHeaders);
+      }
+      setStudents(savedStudents);
+    }
+    setIsStorageLoaded(true);
+  }, [roster]);
 
   // Navigation State
   const [activeSection, setActiveSection] = useState<"pipeline" | "operations" | "admin">("pipeline");
@@ -72,15 +88,32 @@ export default function CampusClubApp() {
   // Typo Corrector Modal State
   const [isTypoModalOpen, setIsTypoModalOpen] = useState(false);
 
-  // Sync roster updates
-  const handleRosterUpdate = (updated: StudentRecord[]) => {
+  // Sync roster updates to domain model, react state, and persistent local storage
+  const handleRosterUpdate = (updated: StudentRecord[], headers?: string[]) => {
     roster.setRecords(updated);
+    if (headers && headers.length > 0) {
+      roster.setColumnHeaders(headers);
+      LocalStorageSyncService.saveHeaders(headers);
+    }
     setStudents([...updated]);
+    if (updated.length > 0) {
+      LocalStorageSyncService.saveStudents(updated);
+    } else {
+      LocalStorageSyncService.clearRoster();
+    }
   };
 
   const handleUpdateSingleStudent = (id: string, updates: Partial<StudentRecord>) => {
     roster.updateRecord(id, updates);
-    setStudents(roster.getRecords());
+    const recs = roster.getRecords();
+    setStudents(recs);
+    LocalStorageSyncService.saveStudents(recs);
+  };
+
+  const handleClearSavedStorage = () => {
+    if (window.confirm("Clear active attendee roster from local storage? This will reset all modules.")) {
+      handleRosterUpdate([]);
+    }
   };
 
   // Nav Item Selectors
@@ -503,9 +536,24 @@ export default function CampusClubApp() {
 
           {/* Right: Quick Actions */}
           <div className="flex items-center gap-2">
-            <span className="hidden md:inline-flex text-[11px] font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-1 rounded-full border border-emerald-200 dark:border-emerald-800">
-              Zero Server Cost • Local Compute
-            </span>
+            {students.length > 0 ? (
+              <div className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-blue-50 dark:bg-blue-950/60 text-blue-700 dark:text-blue-300 border border-blue-200 dark:border-blue-800">
+                <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />
+                <span>{students.length} Synced Locally</span>
+                <button
+                  type="button"
+                  onClick={handleClearSavedStorage}
+                  className="ml-1 text-slate-400 hover:text-rose-500 cursor-pointer text-xs"
+                  title="Clear saved roster from browser storage"
+                >
+                  ✕
+                </button>
+              </div>
+            ) : (
+              <span className="hidden md:inline-flex text-[11px] font-medium text-emerald-700 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/50 px-2.5 py-1 rounded-full border border-emerald-200 dark:border-emerald-800">
+                Zero Server Cost • Local Compute
+              </span>
+            )}
 
             {students.length > 0 && (
               <button
@@ -544,13 +592,23 @@ export default function CampusClubApp() {
                 />
               )}
               {pipelineSubTab === "certificates" && (
-                <CertificateStudioView students={students} />
+                <CertificateStudioView
+                  students={students}
+                  columnHeaders={roster.getColumnHeaders()}
+                />
               )}
               {pipelineSubTab === "idcards" && (
-                <IdCardStudioView students={students} onRosterUpdate={handleRosterUpdate} />
+                <IdCardStudioView
+                  students={students}
+                  columnHeaders={roster.getColumnHeaders()}
+                  onRosterUpdate={handleRosterUpdate}
+                />
               )}
               {pipelineSubTab === "seatplan" && (
-                <SeatPlanView students={students} />
+                <SeatPlanView
+                  students={students}
+                  onRosterUpdate={handleRosterUpdate}
+                />
               )}
               {pipelineSubTab === "email" && (
                 <BulkEmailView students={students} />
@@ -692,7 +750,10 @@ export default function CampusClubApp() {
               {adminSubTab === "budget" && <BudgetReconciler />}
               {adminSubTab === "sponsors" && <SponsorAutoTiler />}
               {adminSubTab === "vault" && (
-                <ClubVaultBackup students={students} />
+                <ClubVaultBackup
+                  students={students}
+                  onRosterUpdate={handleRosterUpdate}
+                />
               )}
             </div>
           )}
