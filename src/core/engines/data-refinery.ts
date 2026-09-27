@@ -434,30 +434,138 @@ export class DataRefineryEngine {
    */
   public static mapRawRowToStudent(row: Record<string, any>, index: number): StudentRecord {
     const keys = Object.keys(row);
+    const norm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, "");
 
-    const findKey = (patterns: string[]): string | undefined => {
-      return keys.find((k) => {
-        const lower = k.toLowerCase().replace(/[^a-z0-9]/g, "");
-        return patterns.some((p) => lower.includes(p));
-      });
+    // Prioritized key detection: 1) Exact normalized match, 2) Keyword match with exclusions
+    const findBestKey = (
+      exactMatches: string[],
+      keywordMatches: string[],
+      excludeSubstrings: string[] = []
+    ): string | undefined => {
+      // Tier 1: Exact normalized match where row has non-empty value
+      for (const k of keys) {
+        const n = norm(k);
+        if (exactMatches.some((m) => norm(m) === n)) {
+          if (row[k] !== undefined && String(row[k]).trim() !== "") return k;
+        }
+      }
+      // Tier 1b: Exact normalized match even if row[k] is currently empty (preserves column schema)
+      for (const k of keys) {
+        const n = norm(k);
+        if (exactMatches.some((m) => norm(m) === n)) return k;
+      }
+      // Tier 2: Keyword match with exclusions where row has non-empty value
+      for (const k of keys) {
+        const n = norm(k);
+        if (excludeSubstrings.some((ex) => n.includes(ex))) continue;
+        if (keywordMatches.some((kw) => n.includes(kw))) {
+          if (row[k] !== undefined && String(row[k]).trim() !== "") return k;
+        }
+      }
+      // Tier 2b: Keyword match with exclusions fallback
+      for (const k of keys) {
+        const n = norm(k);
+        if (excludeSubstrings.some((ex) => n.includes(ex))) continue;
+        if (keywordMatches.some((kw) => n.includes(kw))) return k;
+      }
+      return undefined;
     };
 
-    const nameKey = findKey(["fullname", "name", "studentname", "participant"]);
-    const idKey = findKey(["studentid", "id", "roll", "reg", "registration", "matric"]);
-    const emailKey = findKey(["email", "mail", "emailaddress"]);
-    const phoneKey = findKey(["phone", "mobile", "contact", "whatsapp", "cell"]);
-    const deptKey = findKey(["department", "dept", "program", "faculty", "major"]);
-    const batchKey = findKey(["batch", "semester", "year", "intake"]);
-    const sectionKey = findKey(["section", "sec", "group"]);
-    const tshirtKey = findKey(["tshirt", "size", "shirt", "teesize"]);
-    const foodKey = findKey(["food", "meal", "diet", "lunch", "refreshment"]);
-    const payStatusKey = findKey(["paymentstatus", "status", "paid"]);
-    const payTxKey = findKey(["transaction", "txid", "trxid", "slip", "reference"]);
-    const teamKey = findKey(["teamname", "team", "contestteam", "groupname", "squad", "club"]);
-    const roleKey = findKey(["role", "designation", "position", "category", "rank", "title", "usertype"]);
-    const institutionKey = findKey(["institution", "university", "varsity", "college", "school", "org", "organization", "campus"]);
-    const bloodGroupKey = findKey(["blood", "bloodgroup", "bg", "bloodgrp"]);
-    const advisorKey = findKey(["advisor", "supervisor", "mentor", "teacher", "courseteacher"]);
+    const nameKey = findBestKey(
+      ["fullname", "studentname", "participantname", "attendename", "candidatename", "membername", "name", "full_name", "student_name", "applicantname", "leadername"],
+      ["fullname", "studentname", "participantname", "candidatename", "attendee", "candidate", "name"],
+      ["team", "group", "squad", "company", "college", "school", "org", "institution", "file", "user", "project", "advisor", "teacher", "mentor", "father", "mother"]
+    );
+
+    const idKey = findBestKey(
+      ["studentid", "student_id", "roll", "rollno", "rollnumber", "roll_no", "roll_number", "registrationno", "registration_no", "regno", "reg_no", "registration", "matric", "matricno", "idcard", "id_card", "idno", "id_no", "uid", "badgeid", "participantid", "id"],
+      ["studentid", "rollno", "rollnumber", "roll", "registration", "regno", "matric", "idno", "badgeid", "uid"],
+      ["paid", "valid", "tx", "trx", "trans", "slip", "payment", "guide", "video", "president", "residence", "provider", "middle", "hide"]
+    );
+
+    const emailKey = findBestKey(
+      ["email", "mail", "emailaddress", "email_address", "studentemail"],
+      ["email", "mail"],
+      []
+    );
+
+    const phoneKey = findBestKey(
+      ["phone", "mobile", "contact", "whatsapp", "cell", "phonenumber", "contactnumber", "mobile_number"],
+      ["phone", "mobile", "contact", "whatsapp", "cell"],
+      ["guardian", "emergency", "parent"]
+    );
+
+    const deptKey = findBestKey(
+      ["department", "dept", "program", "faculty", "major", "discipline", "branch"],
+      ["department", "dept", "program", "faculty", "major"],
+      []
+    );
+
+    const batchKey = findBestKey(
+      ["batch", "semester", "year", "intake", "session"],
+      ["batch", "semester", "intake", "session"],
+      []
+    );
+
+    const sectionKey = findBestKey(
+      ["section", "sec", "group"],
+      ["section", "sec"],
+      []
+    );
+
+    const tshirtKey = findBestKey(
+      ["tshirt", "size", "shirt", "teesize", "tshirtsize", "t_shirt_size"],
+      ["tshirt", "teesize", "shirt"],
+      []
+    );
+
+    const foodKey = findBestKey(
+      ["food", "meal", "diet", "lunch", "refreshment", "foodpreference", "dietary"],
+      ["food", "meal", "diet", "lunch", "refreshment"],
+      []
+    );
+
+    const payStatusKey = findBestKey(
+      ["paymentstatus", "status", "paid", "payment_status", "ispaid"],
+      ["paymentstatus", "paystatus", "paid"],
+      ["id", "tx"]
+    );
+
+    const payTxKey = findBestKey(
+      ["transaction", "txid", "trxid", "slip", "reference", "transactionid", "tx_id"],
+      ["transaction", "txid", "trxid", "slip", "reference"],
+      []
+    );
+
+    const teamKey = findBestKey(
+      ["teamname", "team_name", "team", "contestteam", "contest_team", "groupname", "group_name", "squad", "club", "teamtitle"],
+      ["teamname", "contestteam", "team", "squad", "club", "groupname"],
+      ["leader", "member", "email", "phone"]
+    );
+
+    const roleKey = findBestKey(
+      ["role", "designation", "position", "category", "rank", "title", "usertype", "userrole"],
+      ["role", "designation", "position", "category", "rank"],
+      ["project", "team", "department"]
+    );
+
+    const institutionKey = findBestKey(
+      ["institution", "university", "varsity", "college", "school", "campus", "institute", "organization", "org", "academy"],
+      ["institution", "university", "varsity", "college", "school", "campus", "institute", "organization"],
+      []
+    );
+
+    const bloodGroupKey = findBestKey(
+      ["bloodgroup", "blood_group", "blood", "bg", "bloodgrp"],
+      ["bloodgroup", "blood", "bg"],
+      []
+    );
+
+    const advisorKey = findBestKey(
+      ["advisor", "supervisor", "mentor", "teacher", "courseteacher", "course_teacher", "facultyadvisor", "coach"],
+      ["advisor", "supervisor", "mentor", "teacher", "courseteacher", "coach"],
+      []
+    );
 
     // Core mapped fields
     const student: StudentRecord = {

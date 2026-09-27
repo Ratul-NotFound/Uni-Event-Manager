@@ -126,6 +126,21 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
     }
   }, [columnHeaders]);
 
+  // Fallback: If detectedHeaders is empty, load from LocalStorage or extract from localStudents
+  useEffect(() => {
+    if (detectedHeaders.length === 0) {
+      const stored = LocalStorageSyncService.loadHeaders();
+      if (stored && stored.length > 0) {
+        setDetectedHeaders(stored);
+      } else if (localStudents.length > 0) {
+        const extracted = DataRefineryEngine.extractHeaders(localStudents);
+        if (extracted.length > 0) {
+          setDetectedHeaders(extracted);
+        }
+      }
+    }
+  }, [localStudents, detectedHeaders.length]);
+
   // Safe sample student fallback if roster is empty
   const sampleAttendees: StudentRecord[] = useMemo(
     () => [
@@ -223,32 +238,35 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
   const activeElements = activeSide === "front" ? template.frontElements : template.backElements;
   const selectedElement = activeElements.find((el) => el.id === selectedElementId) || null;
 
-  // Auto-detect dynamic Excel columns from uploaded headers and student record
+  // Auto-detect dynamic Excel columns from uploaded headers and student records
   const availableColumns = useMemo(() => {
     const cols = new Set<string>();
 
-    // 1. Core primary columns first
-    ["Name", "ID", "Department", "Team Name", "Role", "Institution", "Blood Group"].forEach((c) =>
-      cols.add(c)
-    );
-
-    // 2. Detected headers from uploaded spreadsheet
-    detectedHeaders.forEach((h) => {
-      if (h && typeof h === "string" && h.trim()) cols.add(h.trim());
-    });
-
-    // 3. Extra dictionary from student record
-    if (currentStudent?.extra) {
-      Object.keys(currentStudent.extra).forEach((k) => {
-        if (k && k.trim()) cols.add(k.trim());
+    // 1. If spreadsheet headers are detected from uploaded file, show them in original sheet order!
+    if (detectedHeaders && detectedHeaders.length > 0) {
+      detectedHeaders.forEach((h) => {
+        if (h && typeof h === "string" && h.trim()) {
+          cols.add(h.trim());
+        }
       });
     }
 
-    // 4. Custom attributes directly on StudentRecord
-    if (currentStudent) {
-      Object.keys(currentStudent).forEach((k) => {
+    // 2. Scan all attendees in activeAttendees to collect any dynamic columns present on records
+    activeAttendees.forEach((st) => {
+      Object.keys(st).forEach((k) => {
         if (
           ![
+            "id",
+            "name",
+            "email",
+            "phone",
+            "department",
+            "batch",
+            "section",
+            "tshirtSize",
+            "foodPreference",
+            "paymentStatus",
+            "paymentTxId",
             "assignedRoom",
             "assignedRow",
             "assignedSeat",
@@ -259,20 +277,37 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
             "emailSent",
             "gateCheckedIn",
             "extra",
-          ].includes(k)
+            "teamName",
+            "role",
+            "institution",
+            "bloodGroup",
+            "advisor",
+          ].includes(k) &&
+          typeof (st as any)[k] !== "object" &&
+          k &&
+          k.trim()
         ) {
-          cols.add(k);
+          cols.add(k.trim());
         }
       });
+      if (st.extra && typeof st.extra === "object") {
+        Object.keys(st.extra).forEach((k) => {
+          if (k && k.trim() && typeof (st.extra as any)[k] !== "object") {
+            cols.add(k.trim());
+          }
+        });
+      }
+    });
+
+    // 3. Fallback to standard core columns ONLY when no spreadsheet columns exist (e.g. fresh empty or demo state)
+    if (cols.size === 0) {
+      ["Name", "ID", "Department", "Team Name", "Role", "Institution", "Blood Group", "Batch", "Section"].forEach(
+        (c) => cols.add(c)
+      );
     }
 
-    // 5. Common secondary fallbacks
-    ["Batch", "Section", "Seat", "Room", "Email", "Phone"].forEach((c) =>
-      cols.add(c)
-    );
-
     return Array.from(cols);
-  }, [detectedHeaders, currentStudent]);
+  }, [detectedHeaders, activeAttendees]);
 
   // Resolves the current attendee's real value for a field (for live preview in selector)
   const getFieldSampleValue = useCallback(
@@ -705,8 +740,26 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
       const currentEls = activeSide === "front" ? template.frontElements : template.backElements;
       return currentEls.some((el) => {
         if (el.type !== "text") return false;
-        const textNorm = (el as IdCardTextElement).text.toLowerCase().replace(/[^a-z0-9]/g, "");
-        return textNorm.includes(norm);
+        const text = (el as IdCardTextElement).text;
+        const textNorm = text.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+        if (text.includes(`{{${fieldName}}}`) || textNorm.includes(norm)) {
+          return true;
+        }
+
+        const isNameField = ["name", "fullname", "studentname", "participant", "participantname"].includes(norm);
+        if (isNameField && (textNorm.includes("name") || textNorm.includes("fullname"))) return true;
+
+        const isIdField = ["id", "studentid", "roll", "rollno", "rollnumber", "reg", "registration"].includes(norm);
+        if (isIdField && (textNorm.includes("id") || textNorm.includes("roll") || textNorm.includes("reg"))) return true;
+
+        const isTeamField = ["team", "teamname", "contestteam", "squad", "club"].includes(norm);
+        if (isTeamField && textNorm.includes("team")) return true;
+
+        const isDeptField = ["department", "dept", "program", "major"].includes(norm);
+        if (isDeptField && (textNorm.includes("dept") || textNorm.includes("department"))) return true;
+
+        return false;
       });
     },
     [activeSide, template]
@@ -769,8 +822,24 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
       const currentEls = activeSide === "front" ? template.frontElements : template.backElements;
       const existing = currentEls.find((el) => {
         if (el.type !== "text") return false;
-        const textNorm = (el as IdCardTextElement).text.toLowerCase().replace(/[^a-z0-9]/g, "");
-        return textNorm.includes(norm);
+        const text = (el as IdCardTextElement).text;
+        const textNorm = text.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+        if (text.includes(`{{${fieldName}}}`) || textNorm.includes(norm)) return true;
+
+        const isNameField = ["name", "fullname", "studentname", "participant", "participantname"].includes(norm);
+        if (isNameField && (textNorm.includes("name") || textNorm.includes("fullname"))) return true;
+
+        const isIdField = ["id", "studentid", "roll", "rollno", "rollnumber", "reg", "registration"].includes(norm);
+        if (isIdField && (textNorm.includes("id") || textNorm.includes("roll") || textNorm.includes("reg"))) return true;
+
+        const isTeamField = ["team", "teamname", "contestteam", "squad", "club"].includes(norm);
+        if (isTeamField && textNorm.includes("team")) return true;
+
+        const isDeptField = ["department", "dept", "program", "major"].includes(norm);
+        if (isDeptField && (textNorm.includes("dept") || textNorm.includes("department"))) return true;
+
+        return false;
       });
 
       if (existing) {
@@ -842,6 +911,19 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
           })
         );
 
+        // Find best matching dynamic tags from available columns if available
+        const findColTag = (candidates: string[], fallback: string) => {
+          for (const col of availableColumns) {
+            const n = col.toLowerCase().replace(/[^a-z0-9]/g, "");
+            if (candidates.includes(n)) return col;
+          }
+          return fallback;
+        };
+        const nameTag = findColTag(["fullname", "studentname", "participantname", "name", "candidatename"], "Name");
+        const idTag = findColTag(["studentid", "rollno", "rollnumber", "roll", "registrationno", "regno", "id"], "ID");
+        const teamTag = findColTag(["teamname", "team", "contestteam", "groupname"], "Team_Name");
+        const deptTag = findColTag(["department", "dept", "program", "major"], "Department");
+
         if (preset === "name_id") {
           // Minimalist: ONLY Name and ID!
           newFrontElements.push(
@@ -851,7 +933,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
               y: 48,
               width: 90,
               height: 7,
-              text: "{{Name}}",
+              text: `{{${nameTag}}}`,
               fontSize: 20,
               fontWeight: "900",
               color: "#FFFFFF",
@@ -876,7 +958,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
               y: 59.5,
               width: 60,
               height: 4,
-              text: "ID: {{ID}}",
+              text: `ID: {{${idTag}}}`,
               fontSize: 12,
               fontFamily: "JetBrains Mono",
               fontWeight: "bold",
@@ -890,7 +972,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
               width: 30,
               height: 18,
               codeType: "qr",
-              valuePattern: "{{ID}}",
+              valuePattern: `{{${idTag}}}`,
               fgColor: "#0F172A",
               bgColor: "#FFFFFF",
               showLabel: false,
@@ -905,7 +987,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
               y: 46,
               width: 90,
               height: 6,
-              text: "{{Name}}",
+              text: `{{${nameTag}}}`,
               fontSize: 18,
               fontWeight: "900",
               color: "#FFFFFF",
@@ -930,7 +1012,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
               y: 54.5,
               width: 70,
               height: 3.5,
-              text: "TEAM: {{Team_Name}}",
+              text: `TEAM: {{${teamTag}}}`,
               fontSize: 10,
               fontWeight: "800",
               color: "#93C5FD",
@@ -943,7 +1025,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
               y: 60.5,
               width: 80,
               height: 4,
-              text: "ID: {{ID}}",
+              text: `ID: {{${idTag}}}`,
               fontSize: 11,
               fontFamily: "JetBrains Mono",
               fontWeight: "bold",
@@ -957,7 +1039,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
               width: 28,
               height: 18,
               codeType: "qr",
-              valuePattern: "{{ID}}",
+              valuePattern: `{{${idTag}}}`,
               fgColor: "#0F172A",
               bgColor: "#FFFFFF",
               showLabel: false,
@@ -972,7 +1054,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
               y: 46,
               width: 90,
               height: 6,
-              text: "{{Name}}",
+              text: `{{${nameTag}}}`,
               fontSize: 18,
               fontWeight: "900",
               color: "#FFFFFF",
@@ -985,7 +1067,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
               y: 53.5,
               width: 90,
               height: 4,
-              text: "{{Department}}",
+              text: `{{${deptTag}}}`,
               fontSize: 11,
               fontWeight: "600",
               color: "#60A5FA",
@@ -1009,7 +1091,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
               y: 61,
               width: 50,
               height: 3.5,
-              text: "ID: {{ID}}",
+              text: `ID: {{${idTag}}}`,
               fontSize: 10,
               fontFamily: "JetBrains Mono",
               fontWeight: "bold",
@@ -1023,7 +1105,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
               width: 30,
               height: 19,
               codeType: "qr",
-              valuePattern: "{{ID}}",
+              valuePattern: `{{${idTag}}}`,
               fgColor: "#0F172A",
               bgColor: "#FFFFFF",
               showLabel: false,
@@ -1038,7 +1120,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
               y: 45,
               width: 90,
               height: 6,
-              text: "{{Name}}",
+              text: `{{${nameTag}}}`,
               fontSize: 17,
               fontWeight: "900",
               color: "#FFFFFF",
@@ -1051,7 +1133,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
               y: 51.5,
               width: 90,
               height: 3.5,
-              text: "{{Department}}",
+              text: `{{${deptTag}}}`,
               fontSize: 10,
               fontWeight: "600",
               color: "#94A3B8",
@@ -1075,7 +1157,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
               y: 57.3,
               width: 70,
               height: 3,
-              text: "TEAM: {{Team_Name}}",
+              text: `TEAM: {{${teamTag}}}`,
               fontSize: 9,
               fontWeight: "800",
               color: "#93C5FD",
@@ -1088,7 +1170,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
               y: 63,
               width: 80,
               height: 3.5,
-              text: "ID: {{ID}}",
+              text: `ID: {{${idTag}}}`,
               fontSize: 10.5,
               fontFamily: "JetBrains Mono",
               fontWeight: "bold",
@@ -1098,11 +1180,11 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
             new IdCardBarcodeQrElement({
               id: "student-qr",
               x: 36,
-              y: 69,
+              y: 69.5,
               width: 28,
               height: 18,
               codeType: "qr",
-              valuePattern: "{{ID}}",
+              valuePattern: `{{${idTag}}}`,
               fgColor: "#0F172A",
               bgColor: "#FFFFFF",
               showLabel: false,
@@ -2045,7 +2127,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({
                           + Insert Dynamic Variable:
                         </span>
                         <div className="flex flex-wrap gap-1 max-h-20 overflow-y-auto">
-                          {availableColumns.slice(0, 10).map((col) => (
+                          {availableColumns.map((col) => (
                             <button
                               key={col}
                               type="button"

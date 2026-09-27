@@ -354,13 +354,13 @@ export function resolveIdCardText(text: string, student: StudentRecord): string 
     const lowerKey = key.toLowerCase();
     const cleanKey = lowerKey.replace(/[^a-z0-9]/g, "");
 
-    // 1. Direct exact property on student
-    if ((student as any)[key] !== undefined && (student as any)[key] !== null) {
+    // 1. Direct exact property on student (non-empty)
+    if ((student as any)[key] !== undefined && (student as any)[key] !== null && String((student as any)[key]).trim() !== "") {
       return String((student as any)[key]);
     }
 
-    // 2. Direct exact property on student.extra
-    if (student.extra && (student.extra as any)[key] !== undefined && (student.extra as any)[key] !== null) {
+    // 2. Direct exact property on student.extra (non-empty)
+    if (student.extra && (student.extra as any)[key] !== undefined && (student.extra as any)[key] !== null && String((student.extra as any)[key]).trim() !== "") {
       return String((student.extra as any)[key]);
     }
 
@@ -368,7 +368,7 @@ export function resolveIdCardText(text: string, student: StudentRecord): string 
     for (const [k, v] of Object.entries(student)) {
       if (k === "extra") continue;
       if (k.toLowerCase() === lowerKey || k.toLowerCase().replace(/[^a-z0-9]/g, "") === cleanKey) {
-        if (v !== undefined && v !== null) return String(v);
+        if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
       }
     }
 
@@ -376,32 +376,32 @@ export function resolveIdCardText(text: string, student: StudentRecord): string 
     if (student.extra) {
       for (const [k, v] of Object.entries(student.extra)) {
         if (k.toLowerCase() === lowerKey || k.toLowerCase().replace(/[^a-z0-9]/g, "") === cleanKey) {
-          if (v !== undefined && v !== null) return String(v);
+          if (v !== undefined && v !== null && String(v).trim() !== "") return String(v);
         }
       }
     }
 
     // 5. Common core aliases fallbacks
     if (["name", "fullname", "studentname", "participant", "participantname"].includes(cleanKey)) {
-      return student.name || "";
+      return student.name || (student as any)["Full Name"] || (student as any)["Student Name"] || (student as any)["Participant Name"] || "";
     }
     if (["id", "studentid", "roll", "rollno", "rollnumber", "reg", "regno", "registration", "registrationno"].includes(cleanKey)) {
-      return student.id || "";
+      return student.id || (student as any)["Student ID"] || (student as any)["Roll Number"] || (student as any)["Roll No"] || "";
     }
     if (["department", "dept", "program", "major"].includes(cleanKey)) {
-      return student.department || "";
+      return student.department || (student as any)["Department"] || (student as any)["Dept"] || "";
     }
     if (["batch", "intake", "year", "session"].includes(cleanKey)) {
-      return student.batch || "";
+      return student.batch || (student as any)["Batch"] || "";
     }
     if (["section", "sec", "group"].includes(cleanKey)) {
-      return student.section || "";
+      return student.section || (student as any)["Section"] || "";
     }
     if (["email", "mail", "emailaddress"].includes(cleanKey)) {
-      return student.email || "";
+      return student.email || (student as any)["Email"] || (student as any)["Email Address"] || "";
     }
     if (["phone", "mobile", "contact", "whatsapp", "cell"].includes(cleanKey)) {
-      return student.phone || "";
+      return student.phone || (student as any)["Phone"] || (student as any)["Mobile"] || (student as any)["Contact"] || "";
     }
     if (["assignedseat", "seat", "seatno"].includes(cleanKey)) {
       return student.assignedSeat || "";
@@ -410,22 +410,27 @@ export function resolveIdCardText(text: string, student: StudentRecord): string 
       return student.assignedRoom || "";
     }
     if (["team", "teamname", "contestteam", "groupname", "squad", "club"].includes(cleanKey)) {
-      return (student as any).teamName || (student as any).team || (student as any)["Team Name"] || (student.extra as any)?.["Team Name"] || (student.extra as any)?.team || "";
+      return (student as any).teamName || (student as any)["Team Name"] || (student as any).team || (student.extra as any)?.["Team Name"] || (student.extra as any)?.team || "";
     }
     if (["role", "designation", "position", "category", "rank", "title", "usertype"].includes(cleanKey)) {
-      return (student as any).role || (student as any).position || (student as any).designation || (student.extra as any)?.role || (student.extra as any)?.position || "";
+      return (student as any).role || (student as any)["Role"] || (student as any).position || (student as any).designation || (student.extra as any)?.role || (student.extra as any)?.position || "";
     }
     if (["institution", "university", "varsity", "college", "school", "org", "organization", "campus"].includes(cleanKey)) {
-      return (student as any).institution || (student as any).university || (student.extra as any)?.institution || (student.extra as any)?.university || "";
+      return (student as any).institution || (student as any)["Institution"] || (student as any).university || (student as any)["University"] || (student.extra as any)?.institution || (student.extra as any)?.university || "";
     }
     if (["blood", "bloodgroup", "bg", "bloodgrp"].includes(cleanKey)) {
-      return (student as any).bloodGroup || (student as any).blood || (student.extra as any)?.bloodGroup || (student.extra as any)?.blood || "";
+      return (student as any).bloodGroup || (student as any)["Blood Group"] || (student as any).blood || (student.extra as any)?.bloodGroup || (student.extra as any)?.blood || "";
     }
     if (["advisor", "supervisor", "mentor", "teacher", "courseteacher"].includes(cleanKey)) {
-      return (student as any).advisor || (student as any).supervisor || (student as any).mentor || (student.extra as any)?.advisor || "";
+      return (student as any).advisor || (student as any)["Advisor"] || (student as any)["Course Teacher / Advisor"] || (student as any).supervisor || (student as any).mentor || (student.extra as any)?.advisor || "";
     }
     if (["date"].includes(cleanKey)) {
       return new Date().toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+    }
+
+    // 6. Direct exact match even if empty
+    if ((student as any)[key] !== undefined && (student as any)[key] !== null) {
+      return String((student as any)[key]);
     }
 
     // Fallback: missing tag resolves safely to empty string

@@ -142,4 +142,30 @@ describe("ID Card Domain Models & Dimensions", () => {
     const nameIdTeam = "{{Name}} | {{ID}} | Team: {{Team}}";
     expect(resolveIdCardText(nameIdTeam, student)).toBe("Alexandria Morgan | CSE-1024 | Team: ByteForce");
   });
+
+  it("resolves arbitrary uploaded spreadsheet columns directly matching exact header names", () => {
+    const rawStudent: StudentRecord = {
+      id: "2026-CSE-101",
+      name: "Tasmia Hossain",
+      email: "tasmia@campus.edu",
+      "Participant Full Name": "Tasmia Hossain",
+      "Registration Number": "2026-CSE-101",
+      "Contest Team": "Code Crafters",
+      "Host College": "School of Computer Science",
+      "Emergency Contact": "+8801711122233",
+      "T-Shirt Size": "M",
+      extra: {
+        "Dietary Requirements": "Halal / Veg",
+        "Project Track": "AI & Robotics",
+      },
+    };
+
+    const text = "{{Participant Full Name}} [{{Registration Number}}] - Team: {{Contest Team}} | Track: {{Project Track}} | Size: {{T-Shirt Size}} | Food: {{Dietary Requirements}}";
+    const resolved = resolveIdCardText(text, rawStudent);
+    expect(resolved).toBe("Tasmia Hossain [2026-CSE-101] - Team: Code Crafters | Track: AI & Robotics | Size: M | Food: Halal / Veg");
+
+    // Also verify {{Name}} and {{ID}} resolve cleanly
+    expect(resolveIdCardText("{{Name}}", rawStudent)).toBe("Tasmia Hossain");
+    expect(resolveIdCardText("{{ID}}", rawStudent)).toBe("2026-CSE-101");
+  });
 });

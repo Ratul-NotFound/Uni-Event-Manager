@@ -278,4 +278,28 @@ describe("DataRefineryEngine", () => {
     // Department should default to empty string, NOT "GENERAL"
     expect(student.department).toBe("");
   });
+
+  it("should prevent false positive key collisions (e.g. Paid matching id, Team Name matching name)", () => {
+    const realisticContestRow = {
+      "Team Name": "Cyber Vanguard",
+      "Paid": "Yes",
+      "Transaction ID": "TXN-9988",
+      "Student ID": "2026-CSE-555",
+      "Full Name": "Rahim Ahmed",
+      "Department": "Computer Science",
+      "University": "Metropolitan University",
+      "Role": "Leader",
+    };
+
+    const student = DataRefineryEngine.mapRawRowToStudent(realisticContestRow, 0);
+    // Crucial: Full Name must map to name, NOT Team Name!
+    expect(student.name).toBe("Rahim Ahmed");
+    // Crucial: Student ID must map to id, NOT Paid or Transaction ID!
+    expect(student.id).toBe("2026-CSE-555");
+    // Team Name must map to teamName
+    expect(student.teamName).toBe("Cyber Vanguard");
+    expect(student.department).toBe("COMPUTER SCIENCE");
+    expect(student.institution).toBe("Metropolitan University");
+    expect(student.role).toBe("Leader");
+  });
 });
