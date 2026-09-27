@@ -48,4 +48,18 @@ describe("ID Card Bulk Generation & Photo Engine", () => {
     expect(avatarInfo2.initials).toBe("J");
     expect(avatarInfo2.bgColor).toBeDefined();
   });
+
+  it("retrieves student photo by ID first, falling back to student Name", () => {
+    const photoMap = new Map<string, string>();
+    photoMap.set("cse1024", "data:image/jpeg;base64,photoById");
+    photoMap.set("rahimahmed", "data:image/jpeg;base64,photoByName");
+
+    const studentById: StudentRecord = { id: "CSE-1024", name: "Alex Morgan", email: "alex@edu" };
+    const studentByName: StudentRecord = { id: "BBA-9999", name: "Rahim Ahmed", email: "rahim@edu" };
+    const studentNoPhoto: StudentRecord = { id: "EEE-0001", name: "Unknown Person", email: "un@edu" };
+
+    expect(IdCardEngine.getStudentPhoto(studentById, photoMap)).toBe("data:image/jpeg;base64,photoById");
+    expect(IdCardEngine.getStudentPhoto(studentByName, photoMap)).toBe("data:image/jpeg;base64,photoByName");
+    expect(IdCardEngine.getStudentPhoto(studentNoPhoto, photoMap)).toBeUndefined();
+  });
 });

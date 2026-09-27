@@ -9,7 +9,7 @@ import {
   resolveIdCardText,
 } from "../domain/id-card-element";
 import { StudentRecord } from "../domain/roster";
-import { PDFDocument } from "pdf-lib";
+import { PDFDocument, rgb } from "pdf-lib";
 import JSZip from "jszip";
 import QRCode from "qrcode";
 import saveAs from "file-saver";
@@ -117,6 +117,22 @@ export class IdCardEngine {
       unmatchedCount: students.length - matchedCount,
       unmatchedIds,
     };
+  }
+
+  /**
+   * Retrieves the student photo from the photo map.
+   * Checks student ID first, then falls back to student Name.
+   */
+  public static getStudentPhoto(
+    student: StudentRecord,
+    photoMap: Map<string, string>
+  ): string | undefined {
+    if (!student || !photoMap || photoMap.size === 0) return undefined;
+    const idKey = IdCardEngine.normalizePhotoId(student.id);
+    if (photoMap.has(idKey)) return photoMap.get(idKey);
+    const nameKey = IdCardEngine.normalizePhotoId(student.name);
+    if (nameKey && photoMap.has(nameKey)) return photoMap.get(nameKey);
+    return undefined;
   }
 
   /**
@@ -549,8 +565,7 @@ export class IdCardEngine {
 
     for (let i = 0; i < students.length; i++) {
       const student = students[i];
-      const photoKey = IdCardEngine.normalizePhotoId(student.id);
-      const photoData = photoMap.get(photoKey);
+      const photoData = IdCardEngine.getStudentPhoto(student, photoMap);
 
       // Render Front
       const frontCanvas = await IdCardEngine.renderFaceToCanvas(
@@ -658,6 +673,39 @@ export class IdCardEngine {
 
       // 1. Draw Front Sheet
       const frontPage = pdfDoc.addPage([a4WidthPt, a4HeightPt]);
+      const guideColor = rgb(0.75, 0.78, 0.82);
+
+      // Draw crop cut guides on front page margins
+      for (let r = 0; r <= tiling.rows; r++) {
+        const lineY = a4HeightPt - marginPtY - r * (cardPtH + gapPtY);
+        frontPage.drawLine({
+          start: { x: Math.max(0, marginPtX - 12), y: lineY },
+          end: { x: marginPtX - 2, y: lineY },
+          thickness: 0.75,
+          color: guideColor,
+        });
+        frontPage.drawLine({
+          start: { x: a4WidthPt - marginPtX + 2, y: lineY },
+          end: { x: Math.min(a4WidthPt, a4WidthPt - marginPtX + 12), y: lineY },
+          thickness: 0.75,
+          color: guideColor,
+        });
+      }
+      for (let c = 0; c <= tiling.cols; c++) {
+        const lineX = marginPtX + c * (cardPtW + gapPtX);
+        frontPage.drawLine({
+          start: { x: lineX, y: a4HeightPt - marginPtY + 2 },
+          end: { x: lineX, y: Math.min(a4HeightPt, a4HeightPt - marginPtY + 12) },
+          thickness: 0.75,
+          color: guideColor,
+        });
+        frontPage.drawLine({
+          start: { x: lineX, y: Math.max(0, marginPtY - 12) },
+          end: { x: lineX, y: marginPtY - 2 },
+          thickness: 0.75,
+          color: guideColor,
+        });
+      }
 
       for (let sIdx = 0; sIdx < pageStudents.length; sIdx++) {
         const student = pageStudents[sIdx];
@@ -665,11 +713,9 @@ export class IdCardEngine {
         const row = Math.floor(sIdx / tiling.cols);
 
         const x = marginPtX + col * (cardPtW + gapPtX);
-        // PDF-lib coordinate (0,0) is bottom-left
         const y = a4HeightPt - marginPtY - (row + 1) * cardPtH - row * gapPtY;
 
-        const photoKey = IdCardEngine.normalizePhotoId(student.id);
-        const photoData = photoMap.get(photoKey);
+        const photoData = IdCardEngine.getStudentPhoto(student, photoMap);
 
         const canvas = await IdCardEngine.renderFaceToCanvas(
           template,
@@ -701,17 +747,48 @@ export class IdCardEngine {
       if (isDual) {
         const backPage = pdfDoc.addPage([a4WidthPt, a4HeightPt]);
 
+        // Draw crop cut guides on back page margins
+        for (let r = 0; r <= tiling.rows; r++) {
+          const lineY = a4HeightPt - marginPtY - r * (cardPtH + gapPtY);
+          backPage.drawLine({
+            start: { x: Math.max(0, marginPtX - 12), y: lineY },
+            end: { x: marginPtX - 2, y: lineY },
+            thickness: 0.75,
+            color: guideColor,
+          });
+          backPage.drawLine({
+            start: { x: a4WidthPt - marginPtX + 2, y: lineY },
+            end: { x: Math.min(a4WidthPt, a4WidthPt - marginPtX + 12), y: lineY },
+            thickness: 0.75,
+            color: guideColor,
+          });
+        }
+        for (let c = 0; c <= tiling.cols; c++) {
+          const lineX = marginPtX + c * (cardPtW + gapPtX);
+          backPage.drawLine({
+            start: { x: lineX, y: a4HeightPt - marginPtY + 2 },
+            end: { x: lineX, y: Math.min(a4HeightPt, a4HeightPt - marginPtY + 12) },
+            thickness: 0.75,
+            color: guideColor,
+          });
+          backPage.drawLine({
+            start: { x: lineX, y: Math.max(0, marginPtY - 12) },
+            end: { x: lineX, y: marginPtY - 2 },
+            thickness: 0.75,
+            color: guideColor,
+          });
+        }
+
         for (let sIdx = 0; sIdx < pageStudents.length; sIdx++) {
           const student = pageStudents[sIdx];
-          // Mirror column position for duplex flip on short edge
+          // Mirror column position for duplex flip on long edge (book-style flip)
           const col = tiling.cols - 1 - (sIdx % tiling.cols);
           const row = Math.floor(sIdx / tiling.cols);
 
           const x = marginPtX + col * (cardPtW + gapPtX);
           const y = a4HeightPt - marginPtY - (row + 1) * cardPtH - row * gapPtY;
 
-          const photoKey = IdCardEngine.normalizePhotoId(student.id);
-          const photoData = photoMap.get(photoKey);
+          const photoData = IdCardEngine.getStudentPhoto(student, photoMap);
 
           const canvas = await IdCardEngine.renderFaceToCanvas(
             template,
@@ -753,8 +830,7 @@ export class IdCardEngine {
       const student = students[i];
       const safeId = (student.id || `ID_${i}`).replace(/[^a-zA-Z0-9_-]/g, "_");
       const safeName = (student.name || "Student").replace(/[^a-zA-Z0-9_-]/g, "_");
-      const photoKey = IdCardEngine.normalizePhotoId(student.id);
-      const photoData = photoMap.get(photoKey);
+      const photoData = IdCardEngine.getStudentPhoto(student, photoMap);
 
       // Front
       const frontCanvas = await IdCardEngine.renderFaceToCanvas(

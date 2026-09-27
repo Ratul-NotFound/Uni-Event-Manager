@@ -165,8 +165,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students }) 
 
     const renderPreview = async () => {
       if (!previewCanvasRef.current) return;
-      const photoKey = IdCardEngine.normalizePhotoId(currentStudent.id);
-      const studentPhoto = photoMap.get(photoKey);
+      const studentPhoto = IdCardEngine.getStudentPhoto(currentStudent, photoMap);
 
       try {
         const rendered = await IdCardEngine.renderFaceToCanvas(
@@ -419,8 +418,7 @@ export const IdCardStudioView: React.FC<IdCardStudioViewProps> = ({ students }) 
 
   // Handle Direct Browser Print
   const handleDirectPrint = async () => {
-    const photoKey = IdCardEngine.normalizePhotoId(currentStudent.id);
-    const studentPhoto = photoMap.get(photoKey);
+    const studentPhoto = IdCardEngine.getStudentPhoto(currentStudent, photoMap);
 
     const canvas = await IdCardEngine.renderFaceToCanvas(
       template,
